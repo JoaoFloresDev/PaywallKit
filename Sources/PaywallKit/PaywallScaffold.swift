@@ -2,7 +2,7 @@
 //  PaywallScaffold.swift
 //  PaywallKit
 //
-//  Reusable paywall view — AppLock-style. Hero gradient + features + plan cards + CTA + restore.
+//  Reusable paywall view — GambitStudio standard (self-contained). Hero gradient + features + plan cards + CTA + restore.
 //
 //  Usage:
 //      PaywallScaffold(
@@ -89,7 +89,7 @@ public struct PaywallScaffold: View {
     @State private var showingError = false
     @State private var errorMessage = ""
 
-    // Entrance animation state (AirDraw model)
+    // Entrance animation state (GambitStudio paywall standard)
     @State private var showHeader = false
     @State private var showBenefits = false
     @State private var showPlans = false

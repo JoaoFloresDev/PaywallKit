@@ -3,7 +3,7 @@
 //  PaywallKit
 //
 //  The "this is a Pro feature" bottom sheet — shown the moment a user taps a locked
-//  element. Same brand-gradient model as PaywallScaffold (AirDraw standard). From here the
+//  element. Same brand-gradient model as PaywallScaffold (GambitStudio paywall standard). From here the
 //  user opens the full paywall (onDiscover) or dismisses (onDismiss).
 //
 //  Usage (host owns the two-step presentation):

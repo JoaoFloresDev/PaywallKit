@@ -1,6 +1,6 @@
 # PaywallKit
 
-Shared GambitStudio paywall + StoreKit 2 manager. Based on AppLock's proven pattern.
+Shared GambitStudio paywall + StoreKit 2 manager. Self-contained GambitStudio standard.
 
 ## What's inside
 
