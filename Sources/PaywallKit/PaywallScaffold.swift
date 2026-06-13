@@ -77,6 +77,9 @@ public struct PaywallScaffold: View {
     private let eulaText: String
     private let privacyText: String
     private let activeStateConfig: PaywallActiveStateConfig
+    private let onClose: (() -> Void)?
+    private let privacyURL: URL
+    private let termsURL: URL
 
     // MARK: - State
     @StateObject private var storeKit = StoreKitManager.shared
@@ -85,6 +88,17 @@ public struct PaywallScaffold: View {
     @State private var selectedProductID: String?
     @State private var showingError = false
     @State private var errorMessage = ""
+
+    // Entrance animation state (AirDraw model)
+    @State private var showHeader = false
+    @State private var showBenefits = false
+    @State private var showPlans = false
+    @State private var showButton = false
+    @State private var iconPulse = false
+
+    // GambitStudio standard legal URLs (overridable via init).
+    private static let defaultPrivacyURL = URL(string: "https://drive.google.com/file/d/147xkp4cekrxhrBYZnzV-J4PzCSqkix7t/view?usp=sharing")!
+    private static let defaultTermsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     // MARK: - Init
     public init(
@@ -99,7 +113,10 @@ public struct PaywallScaffold: View {
         restoreButtonText: String,
         eulaText: String,
         privacyText: String,
-        activeStateConfig: PaywallActiveStateConfig
+        activeStateConfig: PaywallActiveStateConfig,
+        privacyURL: URL? = nil,
+        termsURL: URL? = nil,
+        onClose: (() -> Void)? = nil
     ) {
         self.gradient = gradient
         self.title = title
@@ -113,6 +130,9 @@ public struct PaywallScaffold: View {
         self.eulaText = eulaText
         self.privacyText = privacyText
         self.activeStateConfig = activeStateConfig
+        self.privacyURL = privacyURL ?? PaywallScaffold.defaultPrivacyURL
+        self.termsURL = termsURL ?? PaywallScaffold.defaultTermsURL
+        self.onClose = onClose
     }
 
     // MARK: - View Body
@@ -126,6 +146,7 @@ public struct PaywallScaffold: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { closeToolbar }
+            .toolbarBackground(.hidden, for: .navigationBar)
             .alert("Error", isPresented: $showingError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -139,15 +160,26 @@ public struct PaywallScaffold: View {
                 if selectedProductID == nil {
                     selectedProductID = storeKit.yearlyProduct?.id ?? storeKit.products.first?.id
                 }
+                startAnimations()
             }
         }
+        .preferredColorScheme(.light)
+    }
+
+    // MARK: - Entrance Animations
+    private func startAnimations() {
+        withAnimation(.easeOut(duration: 0.5)) { showHeader = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation(.easeOut(duration: 0.5)) { showBenefits = true } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { withAnimation(.easeOut(duration: 0.5)) { showPlans = true } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { withAnimation(.easeOut(duration: 0.5)) { showButton = true } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { iconPulse = true }
     }
 
     // MARK: - Toolbar
     @ToolbarContentBuilder
     private var closeToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
-            Button(action: { dismiss() }) {
+            Button(action: { onClose?() ?? dismiss() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -161,8 +193,8 @@ public struct PaywallScaffold: View {
         VStack(spacing: 30) {
             Spacer()
             ZStack {
-                Circle().fill(Color.yellow.opacity(0.2)).frame(width: 140, height: 140)
-                Image(systemName: "crown.fill").font(.system(size: 70)).foregroundStyle(.yellow)
+                Circle().fill(Color(red: 1.0, green: 0.85, blue: 0.0).opacity(0.2)).frame(width: 140, height: 140)
+                Image(systemName: "crown.fill").font(.system(size: 70)).foregroundStyle(Color(red: 1.0, green: 0.85, blue: 0.0))
             }
             VStack(spacing: 12) {
                 Text(activeStateConfig.title)
@@ -206,61 +238,116 @@ public struct PaywallScaffold: View {
     }
 
     // MARK: - Purchase state
+    //
+    // 3-zone vertical layout, anchored top + bottom:
+    //   [top]    crown + title + subtitle
+    //   [middle] features list + plan cards (yearly + monthly)
+    //   [bottom] CTA + restore button
+    //
+    // Spacer() between zones distributes empty space naturally on any screen
+    // size (iPhone SE → 16 Pro Max) without each zone needing manual padding.
+    // Horizontal padding is unified at 24pt for the whole view.
     private var purchaseStateView: some View {
         VStack(spacing: 0) {
+            // TOP — header (pulsing crown + entrance)
             VStack(spacing: 12) {
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 50)).foregroundStyle(.yellow).padding(.top, 30)
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 1.0, green: 0.85, blue: 0.0).opacity(0.2))
+                        .frame(width: 92, height: 92)
+                        .scaleEffect(iconPulse ? 1.08 : 1.0)
+                        .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: iconPulse)
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(Color(red: 1.0, green: 0.85, blue: 0.0))
+                }
                 Text(title)
-                    .font(.system(size: 26, weight: .bold)).foregroundStyle(.white)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
                 Text(subtitle)
-                    .font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center).padding(.horizontal, 40)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, 25)
+            .padding(.top, 8)
+            .opacity(showHeader ? 1 : 0)
+            .offset(y: showHeader ? 0 : 20)
 
+            Spacer(minLength: 24)
+
+            // MIDDLE — features (icon-in-circle) + plans
+            VStack(spacing: 20) {
+                VStack(spacing: 14) {
+                    ForEach(features) { f in
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(Color.white.opacity(0.2)).frame(width: 44, height: 44)
+                                Image(systemName: f.symbol)
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.white)
+                            }
+                            Text(f.title)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.white)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .opacity(showBenefits ? 1 : 0)
+                .offset(y: showBenefits ? 0 : 20)
+
+                planCards
+                    .opacity(showPlans ? 1 : 0)
+                    .offset(y: showPlans ? 0 : 20)
+            }
+
+            Spacer(minLength: 24)
+
+            // BOTTOM — CTA + restore + legal links
             VStack(spacing: 12) {
-                ForEach(features) { f in
-                    HStack(spacing: 12) {
-                        Image(systemName: f.symbol)
-                            .font(.system(size: 18)).foregroundStyle(.white).frame(width: 24)
-                        Text(f.title)
-                            .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 18)).foregroundStyle(.green)
+                Button(action: subscribe) {
+                    HStack {
+                        if storeKit.isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: gradient.first ?? .blue))
+                        } else {
+                            Text(ctaButtonText)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(gradient.first ?? .blue)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.white)
+                    .cornerRadius(14)
+                }
+                .disabled(storeKit.isLoading)
+                .opacity(storeKit.isLoading ? 0.6 : 1.0)
+
+                HStack(spacing: 12) {
+                    Button(action: restore) {
+                        Text(restoreButtonText)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .disabled(storeKit.isLoading)
+                    Text("·").foregroundStyle(.white.opacity(0.4))
+                    Link(privacyText, destination: privacyURL)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text("·").foregroundStyle(.white.opacity(0.4))
+                    Link(eulaText, destination: termsURL)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
                 }
             }
-            .padding(.horizontal, 30).padding(.bottom, 25)
-
-            planCards.padding(.horizontal, 20).padding(.bottom, 20)
-
-            Button(action: subscribe) {
-                HStack {
-                    if storeKit.isLoading {
-                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: gradient.first ?? .blue))
-                    } else {
-                        Text(ctaButtonText)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(gradient.first ?? .blue)
-                    }
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 14)
-                .background(Color.white).cornerRadius(14)
-            }
-            .disabled(storeKit.isLoading)
-            .opacity(storeKit.isLoading ? 0.6 : 1.0)
-            .padding(.horizontal, 20).padding(.bottom, 15)
-
-            Button(action: restore) {
-                Text(restoreButtonText)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
-            }
-            .disabled(storeKit.isLoading)
-            .padding(.bottom, 20)
+            .padding(.bottom, 8)
+            .opacity(showButton ? 1 : 0)
+            .offset(y: showButton ? 0 : 20)
         }
+        .padding(.horizontal, 24)
     }
 
     private var planCards: some View {
@@ -291,14 +378,7 @@ public struct PaywallScaffold: View {
                     if isSelected { Circle().fill(Color.white).frame(width: 12, height: 12) }
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(title).font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
-                        if let badge {
-                            Text(badge).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.green.opacity(0.6)).cornerRadius(4)
-                        }
-                    }
+                    Text(title).font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -311,6 +391,18 @@ public struct PaywallScaffold: View {
                             .fill(Color.white.opacity(isSelected ? 0.25 : 0.15))
                             .overlay(RoundedRectangle(cornerRadius: 16)
                                         .stroke(Color.white, lineWidth: isSelected ? 2 : 0)))
+            .overlay(alignment: .topTrailing) {
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Color.green)
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                        .offset(x: -14, y: -10)
+                }
+            }
         }
     }
 
