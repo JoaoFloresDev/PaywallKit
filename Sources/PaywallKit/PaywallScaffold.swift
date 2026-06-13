@@ -56,6 +56,7 @@ public struct PaywallActiveStateConfig {
 }
 
 public enum PaywallPlanLabel {
+    case weekly(title: String, period: String, recommendedBadge: String?)
     case monthly(title: String, period: String)
     case yearly(title: String, period: String, recommendedBadge: String?)
     case lifetime(title: String, period: String)
@@ -69,6 +70,7 @@ public struct PaywallScaffold: View {
     private let title: String
     private let subtitle: String
     private let features: [PaywallFeatureItem]
+    private let weeklyLabel: PaywallPlanLabel?
     private let monthlyLabel: PaywallPlanLabel?
     private let yearlyLabel: PaywallPlanLabel?
     private let lifetimeLabel: PaywallPlanLabel?
@@ -106,6 +108,7 @@ public struct PaywallScaffold: View {
         title: String,
         subtitle: String,
         features: [PaywallFeatureItem],
+        weeklyLabel: PaywallPlanLabel? = nil,
         monthlyLabel: PaywallPlanLabel? = nil,
         yearlyLabel: PaywallPlanLabel? = nil,
         lifetimeLabel: PaywallPlanLabel? = nil,
@@ -122,6 +125,7 @@ public struct PaywallScaffold: View {
         self.title = title
         self.subtitle = subtitle
         self.features = features
+        self.weeklyLabel = weeklyLabel
         self.monthlyLabel = monthlyLabel
         self.yearlyLabel = yearlyLabel
         self.lifetimeLabel = lifetimeLabel
@@ -357,6 +361,9 @@ public struct PaywallScaffold: View {
                     .scaleEffect(1.2).frame(height: 120)
             } else {
                 if let p = storeKit.yearlyProduct, let label = yearlyLabel, case let .yearly(title, period, badge) = label {
+                    planCard(product: p, title: title, period: period, badge: badge)
+                }
+                if let p = storeKit.weeklyProduct, let label = weeklyLabel, case let .weekly(title, period, badge) = label {
                     planCard(product: p, title: title, period: period, badge: badge)
                 }
                 if let p = storeKit.monthlyProduct, let label = monthlyLabel, case let .monthly(title, period) = label {

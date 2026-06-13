@@ -31,6 +31,7 @@ public final class StoreKitManager: NSObject, ObservableObject {
 
     // MARK: - Private
     private var productIDs: [String] = []
+    private var weeklyID: String?
     private var monthlyID: String?
     private var yearlyID: String?
     private var lifetimeID: String?
@@ -48,12 +49,14 @@ public final class StoreKitManager: NSObject, ObservableObject {
 
     // MARK: - Configuration
     /// Call ONCE at app launch with the app's product IDs.
-    /// Recommended: pass monthly, yearly, lifetime in that order if present.
-    public func configure(monthly: String? = nil, yearly: String? = nil, lifetime: String? = nil) {
+    /// Pass whichever plans the app sells — weekly, monthly, yearly, lifetime (any subset).
+    /// The GambitStudio default plan model is weekly + yearly.
+    public func configure(weekly: String? = nil, monthly: String? = nil, yearly: String? = nil, lifetime: String? = nil) {
+        self.weeklyID = weekly
         self.monthlyID = monthly
         self.yearlyID = yearly
         self.lifetimeID = lifetime
-        self.productIDs = [monthly, yearly, lifetime].compactMap { $0 }
+        self.productIDs = [weekly, monthly, yearly, lifetime].compactMap { $0 }
         Task {
             await loadProducts()
             await updatePurchasedProducts()
@@ -71,6 +74,11 @@ public final class StoreKitManager: NSObject, ObservableObject {
 
     // MARK: - Public computed
     public var isPremium: Bool { !purchasedProductIDs.isEmpty }
+
+    public var weeklyProduct: Product? {
+        guard let id = weeklyID else { return nil }
+        return product(for: id)
+    }
 
     public var monthlyProduct: Product? {
         guard let id = monthlyID else { return nil }
