@@ -110,3 +110,40 @@ var body: some View {
 Create `Configuration.storekit` in your Xcode project with the product IDs you passed to `configure(...)`. In the scheme's Run options, select that file. This lets you test purchases on simulator without Apple account.
 
 Product ID convention: `[appname].pro.monthly` · `[appname].pro.yearly` · `[appname].pro.lifetime`
+
+---
+
+## Alternativa high-converting: `PurchaseScaffold`
+
+Paywall estilo "Adam Lyttle": hero com shake, timer de cooldown no botão fechar, badge de SAVE %, detecção de trial e cards de plano selecionáveis. Ligado ao **mesmo `StoreKitManager.shared` nativo** (StoreKit 2, sem SDK terceiro). Hero é SF Symbol por padrão (zero assets), com `heroImageName` opcional.
+
+Adaptado de [Paywall-PurchaseView-SwiftUI](https://github.com/adamlyttleapps/Paywall-PurchaseView-SwiftUI) (Adam Lyttle, MIT) — o `PurchaseModel` stub original foi trocado pelo `StoreKitManager`.
+
+```swift
+import PaywallKit
+
+// configure uma vez no launch (igual ao PaywallScaffold):
+StoreKitManager.shared.configure(
+    weekly: "myapp.pro.weekly",
+    yearly: "myapp.pro.yearly"
+)
+
+.fullScreenCover(isPresented: $showPaywall) {
+    PurchaseScaffold(
+        isPresented: $showPaywall,
+        title: String(localized: "paywall.title"),
+        accentColor: AppColors.primary,
+        features: [
+            .init(title: String(localized: "paywall.feature1"), icon: "infinity"),
+            .init(title: String(localized: "paywall.feature2"), icon: "sparkles"),
+            .init(title: String(localized: "paywall.feature3"), icon: "lock.open.fill"),
+            .init(title: String(localized: "paywall.feature4"), icon: "lock.square.stack")
+        ],
+        heroSymbol: "crown.fill",
+        termsURL: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"),
+        privacyURL: URL(string: "https://drive.google.com/file/d/147xkp4cekrxhrBYZnzV-J4PzCSqkix7t/view")
+    )
+}
+```
+
+A % de SAVE é calculada do preço semanal anualizado (×52) vs o anual; trial é detectado via `product.subscription.introductoryOffer`. Os textos de CTA/restore/terms são parâmetros (default em inglês) — passe `String(localized:)` pra localizar. Use `PaywallScaffold` quando quiser o layout mais sóbrio com gradiente; `PurchaseScaffold` quando quiser a versão mais agressiva de conversão.
