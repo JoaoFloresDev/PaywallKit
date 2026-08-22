@@ -89,6 +89,7 @@ public struct PurchaseScaffold: View {
     @State private var progress: CGFloat = 0
     @State private var showNoneRestoredAlert = false
     @State private var showTermsSheet = false
+    @State private var shownAt = Date()
 
     // MARK: - Init
     public init(
@@ -178,7 +179,11 @@ public struct PurchaseScaffold: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 20)
                     .opacity(0.2)
-                    .onTapGesture { isPresented = false }
+                    .onTapGesture {
+                        PaywallAnalytics.log("paywall_dismissed", ["placement": "purchase_scaffold",
+                                                                   "seconds": Int(Date().timeIntervalSince(shownAt))])
+                        isPresented = false
+                    }
             }
         }
         .padding(.top)
@@ -315,6 +320,8 @@ public struct PurchaseScaffold: View {
     // MARK: - Lifecycle
     private func handleAppear() {
         if store.isPremium { isPresented = false }
+        shownAt = Date()
+        if !store.isPremium { PaywallAnalytics.log("paywall_shown", ["placement": "purchase_scaffold"]) }
         selectedProductID = store.products.first?.id ?? ""
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             withAnimation(.easeIn(duration: allowCloseAfter)) { progress = 1.0 }

@@ -118,15 +118,28 @@ public final class StoreKitManager: NSObject, ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
 
-        let result = try await product.purchase()
+        let pp = PaywallAnalytics.productParams(product)
+        PaywallAnalytics.log("purchase_started", pp)
+        let result: Product.PurchaseResult
+        do {
+            result = try await product.purchase()
+        } catch {
+            PaywallAnalytics.log("purchase_abandoned", pp.merging(["reason": "failed"]) { $1 })
+            throw error
+        }
 
         switch result {
         case .success(let verification):
             let transaction = try checkVerified(verification)
             await updatePurchasedProducts()
             await transaction.finish()
+            PaywallAnalytics.log("purchase_success", pp)
             return transaction
-        case .userCancelled, .pending:
+        case .userCancelled:
+            PaywallAnalytics.log("purchase_abandoned", pp.merging(["reason": "cancelled"]) { $1 })
+            return nil
+        case .pending:
+            PaywallAnalytics.log("purchase_abandoned", pp.merging(["reason": "pending"]) { $1 })
             return nil
         @unknown default:
             return nil
@@ -139,6 +152,9 @@ public final class StoreKitManager: NSObject, ObservableObject {
         do {
             try await AppStore.sync()
             await updatePurchasedProducts()
+            if let id = purchasedProductIDs.first {
+                PaywallAnalytics.log("purchase_restored", ["product_id": id])
+            }
         } catch {
             errorMessage = "Failed to restore purchases"
         }

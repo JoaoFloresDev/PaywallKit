@@ -65,6 +65,7 @@ public struct PaywallProPromptSheet: View {
         ZStack {
             LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
+                .onAppear { PaywallAnalytics.log("premium_gate_hit", ["feature": PaywallAnalytics.source]) }
 
             VStack(spacing: 18) {
                 Capsule()
