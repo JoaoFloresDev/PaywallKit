@@ -97,6 +97,7 @@ public struct PaywallScaffold: View {
     @State private var showPlans = false
     @State private var showButton = false
     @State private var iconPulse = false
+    @State private var shownAt = Date()
 
     // GambitStudio standard legal URLs (overridable via init).
     private static let defaultPrivacyURL = URL(string: "https://drive.google.com/file/d/147xkp4cekrxhrBYZnzV-J4PzCSqkix7t/view?usp=sharing")!
@@ -158,6 +159,8 @@ public struct PaywallScaffold: View {
             }
             .onAppear {
                 isPremium = storeKit.isPremium
+                shownAt = Date()
+                if !isPremium { PaywallAnalytics.log("paywall_shown", ["placement": "paywall_scaffold"]) }
                 if storeKit.products.isEmpty && !storeKit.isLoading {
                     Task { await storeKit.loadProducts() }
                 }
@@ -182,11 +185,11 @@ public struct PaywallScaffold: View {
     // MARK: - Toolbar
     @ToolbarContentBuilder
     private var closeToolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Button(action: { onClose?() ?? dismiss() }) {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button(action: { logDismissed(); onClose?() ?? dismiss() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.white.opacity(0.5))
                     .frame(width: 24, height: 24)
             }
         }
@@ -269,11 +272,13 @@ public struct PaywallScaffold: View {
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
-                Text(subtitle)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.top, 8)
             .opacity(showHeader ? 1 : 0)
@@ -414,6 +419,12 @@ public struct PaywallScaffold: View {
     }
 
     // MARK: - Actions
+    private func logDismissed() {
+        guard !isPremium else { return }
+        PaywallAnalytics.log("paywall_dismissed", ["placement": "paywall_scaffold",
+                                                   "seconds": Int(Date().timeIntervalSince(shownAt))])
+    }
+
     private func subscribe() {
         guard let id = selectedProductID, let product = storeKit.product(for: id) else {
             errorMessage = "No product selected"
