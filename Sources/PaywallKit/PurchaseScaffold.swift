@@ -77,6 +77,7 @@ public struct PurchaseScaffold: View {
     private let thenText: String
     private let saveText: String
     private let nothingRestoredText: String
+    private let periodNames: PurchasePeriodNames
 
     // MARK: - Dependencies
     @ObservedObject private var store = StoreKitManager.shared
@@ -110,7 +111,8 @@ public struct PurchaseScaffold: View {
         perText: String = "per",
         thenText: String = "then",
         saveText: String = "SAVE",
-        nothingRestoredText: String = "No purchases restored"
+        nothingRestoredText: String = "No purchases restored",
+        periodNames: PurchasePeriodNames = .english
     ) {
         self._isPresented = isPresented
         self.title = title
@@ -130,11 +132,12 @@ public struct PurchaseScaffold: View {
         self.thenText = thenText
         self.saveText = saveText
         self.nothingRestoredText = nothingRestoredText
+        self.periodNames = periodNames
     }
 
     // MARK: - Computed
     private var plans: [PurchasePlan] {
-        store.products.map { PurchasePlan(product: $0, perText: perText) }
+        store.products.map { PurchasePlan(product: $0, names: periodNames) }
     }
 
     private var selectedHasTrial: Bool {
@@ -247,6 +250,7 @@ public struct PurchaseScaffold: View {
                         isSelected: selectedProductID == plan.id,
                         accentColor: accentColor,
                         thenText: thenText,
+                        perText: perText,
                         saveText: saveText,
                         percentageSaved: percentageSaved
                     )

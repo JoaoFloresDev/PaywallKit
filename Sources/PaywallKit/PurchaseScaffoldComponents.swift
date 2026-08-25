@@ -13,6 +13,88 @@
 import SwiftUI
 import StoreKit
 
+// MARK: - Period
+
+/// The billing period a plan renews on, normalised away from how StoreKit
+/// happens to express it (a weekly product can arrive as `.day` × 7).
+public enum PurchasePeriod: Sendable, Hashable {
+    case day, week, month, year
+
+    /// Collapses a raw StoreKit period into the period a user would name it.
+    static func normalised(unit: Product.SubscriptionPeriod.Unit, value: Int) -> PurchasePeriod {
+        switch unit {
+        case .day:
+            if value % 365 == 0 { return .year }
+            if value % 30 == 0 || value % 31 == 0 { return .month }
+            if value % 7 == 0 { return .week }
+            return .day
+        case .week:
+            if value >= 52 { return .year }
+            if value >= 4 { return .month }
+            return .week
+        case .month:
+            return value >= 12 ? .year : .month
+        case .year:
+            return .year
+        @unknown default:
+            return .month
+        }
+    }
+
+    static func of(_ period: Product.SubscriptionPeriod) -> PurchasePeriod {
+        normalised(unit: period.unit, value: period.value)
+    }
+}
+
+// MARK: - Period Names
+
+/// Localised wording for plan periods. The kit ships English; every app passes
+/// its own so the paywall speaks the same language as the rest of the UI.
+public struct PurchasePeriodNames: Sendable {
+    public var planName: @Sendable (PurchasePeriod) -> String
+    public var unitName: @Sendable (PurchasePeriod) -> String
+    public var trialName: @Sendable (Int, PurchasePeriod) -> String
+
+    public init(
+        planName: @escaping @Sendable (PurchasePeriod) -> String,
+        unitName: @escaping @Sendable (PurchasePeriod) -> String,
+        trialName: @escaping @Sendable (Int, PurchasePeriod) -> String
+    ) {
+        self.planName = planName
+        self.unitName = unitName
+        self.trialName = trialName
+    }
+
+    public static let english = PurchasePeriodNames(
+        planName: { period in
+            switch period {
+            case .day: return "Daily Plan"
+            case .week: return "Weekly Plan"
+            case .month: return "Monthly Plan"
+            case .year: return "Yearly Plan"
+            }
+        },
+        unitName: { period in
+            switch period {
+            case .day: return "day"
+            case .week: return "week"
+            case .month: return "month"
+            case .year: return "year"
+            }
+        },
+        trialName: { count, period in
+            let unit: String
+            switch period {
+            case .day: unit = "Day"
+            case .week: unit = "Week"
+            case .month: unit = "Month"
+            case .year: unit = "Year"
+            }
+            return "\(count)-\(unit) Trial"
+        }
+    )
+}
+
 // MARK: - Plan Display Model
 
 /// A presentation model derived from a StoreKit `Product`.
@@ -21,49 +103,26 @@ struct PurchasePlan: Identifiable {
     let id: String
     let price: String
     let priceValue: Decimal
-    let duration: String
+    let period: PurchasePeriod?
+    let unitLabel: String
     let durationPlanName: String
     let hasTrial: Bool
 
     // MARK: - Init
-    init(product: Product, perText: String) {
+    init(product: Product, names: PurchasePeriodNames) {
         self.id = product.id
         self.price = product.displayPrice
         self.priceValue = product.price
-        self.duration = PurchasePlan.durationLabel(for: product)
+        self.period = product.subscription.map { PurchasePeriod.of($0.subscriptionPeriod) }
+        self.unitLabel = self.period.map(names.unitName) ?? ""
         self.hasTrial = product.subscription?.introductoryOffer?.paymentMode == .freeTrial
-        self.durationPlanName = PurchasePlan.planName(for: product, hasTrial: self.hasTrial)
-    }
 
-    // MARK: - Helpers
-    private static func durationLabel(for product: Product) -> String {
-        guard let unit = product.subscription?.subscriptionPeriod.unit else { return "" }
-        switch unit {
-        case .day: return "day"
-        case .week: return "week"
-        case .month: return "month"
-        case .year: return "year"
-        @unknown default: return ""
-        }
-    }
-
-    private static func planName(for product: Product, hasTrial: Bool) -> String {
         if hasTrial, let offer = product.subscription?.introductoryOffer {
-            let value = offer.period.value
-            switch offer.period.unit {
-            case .day: return "\(value)-Day Trial"
-            case .week: return "\(value)-Week Trial"
-            case .month: return "\(value)-Month Trial"
-            case .year: return "\(value)-Year Trial"
-            @unknown default: break
-            }
-        }
-        switch product.subscription?.subscriptionPeriod.unit {
-        case .day: return "Daily Plan"
-        case .week: return "Weekly Plan"
-        case .month: return "Monthly Plan"
-        case .year: return "Yearly Plan"
-        default: return product.displayName
+            self.durationPlanName = names.trialName(offer.period.value, PurchasePeriod.of(offer.period))
+        } else if let period = self.period {
+            self.durationPlanName = names.planName(period)
+        } else {
+            self.durationPlanName = product.displayName
         }
     }
 }
@@ -73,7 +132,7 @@ struct PurchasePlan: Identifiable {
 enum PurchasePricing {
     /// Annualised weekly price used to strike-through the yearly plan.
     static func annualisedWeeklyPrice(in plans: [PurchasePlan]) -> Decimal? {
-        guard let weekly = plans.first(where: { $0.duration == "week" }) else { return nil }
+        guard let weekly = plans.first(where: { $0.period == .week }) else { return nil }
         return weekly.priceValue * 52
     }
 
@@ -82,7 +141,7 @@ enum PurchasePricing {
         guard
             let fullPrice = annualisedWeeklyPrice(in: plans),
             fullPrice > 0,
-            let yearly = plans.first(where: { $0.duration == "year" })
+            let yearly = plans.first(where: { $0.period == .year })
         else { return 90 }
 
         let ratio = (yearly.priceValue / fullPrice) as NSDecimalNumber
@@ -94,7 +153,7 @@ enum PurchasePricing {
     static func annualisedDisplay(in plans: [PurchasePlan]) -> String? {
         guard
             let value = annualisedWeeklyPrice(in: plans),
-            let weekly = plans.first(where: { $0.duration == "week" })?.priceFormat
+            let weekly = plans.first(where: { $0.period == .week })?.priceFormat
         else { return nil }
         return weekly.string(from: value as NSDecimalNumber)
     }
@@ -137,6 +196,7 @@ struct PurchasePlanCard: View {
     let isSelected: Bool
     let accentColor: Color
     let thenText: String
+    let perText: String
     let saveText: String
     let percentageSaved: Int
 
@@ -184,7 +244,7 @@ struct PurchasePlanCard: View {
 
     // MARK: - Subviews
     private var perPhrase: String {
-        plan.duration.isEmpty ? "" : "per \(plan.duration)"
+        plan.unitLabel.isEmpty ? "" : "\(perText) \(plan.unitLabel)"
     }
 
     private var selectionIndicator: some View {
