@@ -21,7 +21,7 @@ public enum PurchasePeriod: Sendable, Hashable {
     case day, week, month, year
 
     /// Collapses a raw StoreKit period into the period a user would name it.
-    static func normalised(unit: Product.SubscriptionPeriod.Unit, value: Int) -> PurchasePeriod {
+    public static func normalised(unit: Product.SubscriptionPeriod.Unit, value: Int) -> PurchasePeriod {
         switch unit {
         case .day:
             if value % 365 == 0 { return .year }
@@ -41,7 +41,7 @@ public enum PurchasePeriod: Sendable, Hashable {
         }
     }
 
-    static func of(_ period: Product.SubscriptionPeriod) -> PurchasePeriod {
+    public static func of(_ period: Product.SubscriptionPeriod) -> PurchasePeriod {
         normalised(unit: period.unit, value: period.value)
     }
 }
