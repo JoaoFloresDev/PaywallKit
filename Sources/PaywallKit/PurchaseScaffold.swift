@@ -160,6 +160,7 @@ public struct PurchaseScaffold: View {
         }
         .padding(.horizontal)
         .onAppear(perform: handleAppear)
+        .onChange(of: store.products) { _, _ in selectDefaultPlanIfNeeded() }
         .onChange(of: store.isPremium) { _, isPremium in
             if isPremium { dismissSoon() }
         }
@@ -326,13 +327,21 @@ public struct PurchaseScaffold: View {
         if store.isPremium { isPresented = false }
         shownAt = Date()
         if !store.isPremium { PaywallAnalytics.log("paywall_shown", ["placement": "purchase_scaffold"]) }
-        selectedProductID = store.products.first?.id ?? ""
+        selectDefaultPlanIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             withAnimation(.easeIn(duration: allowCloseAfter)) { progress = 1.0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + allowCloseAfter) {
                 withAnimation { showCloseButton = true }
             }
         }
+    }
+
+    /// Products load asynchronously, so the paywall can appear before any plan
+    /// exists to select. Products are price-sorted, so the first one is the
+    /// headline plan (the yearly, where the trial lives).
+    private func selectDefaultPlanIfNeeded() {
+        guard store.products.contains(where: { $0.id == selectedProductID }) == false else { return }
+        selectedProductID = store.products.first?.id ?? ""
     }
 
     private func dismissSoon() {
