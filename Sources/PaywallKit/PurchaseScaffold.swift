@@ -178,16 +178,23 @@ public struct PurchaseScaffold: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 20, height: 20)
             } else {
-                Image(systemName: "multiply")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 20)
-                    .opacity(0.2)
-                    .onTapGesture {
-                        PaywallAnalytics.log("paywall_dismissed", ["placement": "purchase_scaffold",
-                                                                   "seconds": Int(Date().timeIntervalSince(shownAt))])
-                        isPresented = false
-                    }
+                // Visually subtle on purpose, but the hit area is 44pt and VoiceOver/QA can reach it:
+                // "xmark" gets the system-localized "Close" label, and the id lets Maestro tap it.
+                Button {
+                    PaywallAnalytics.log("paywall_dismissed", ["placement": "purchase_scaffold",
+                                                               "seconds": Int(Date().timeIntervalSince(shownAt))])
+                    isPresented = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 18)
+                        .opacity(0.2)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("paywall.close")
             }
         }
         .padding(.top)
