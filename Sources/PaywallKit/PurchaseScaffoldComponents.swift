@@ -137,16 +137,18 @@ enum PurchasePricing {
     }
 
     /// Percentage saved by the yearly plan vs paying weekly for a year.
-    static func percentageSaved(in plans: [PurchasePlan]) -> Int {
+    /// `nil` when there is no weekly plan to compare against or no real saving —
+    /// the badge is hidden then instead of showing a made-up number.
+    static func percentageSaved(in plans: [PurchasePlan]) -> Int? {
         guard
             let fullPrice = annualisedWeeklyPrice(in: plans),
             fullPrice > 0,
             let yearly = plans.first(where: { $0.period == .year })
-        else { return 90 }
+        else { return nil }
 
         let ratio = (yearly.priceValue / fullPrice) as NSDecimalNumber
         let saved = 100 - Int(ratio.doubleValue * 100)
-        return saved > 0 ? saved : 90
+        return saved > 0 ? saved : nil
     }
 
     /// Localised currency string for an annualised value, matched to a sample plan's locale.
@@ -198,7 +200,7 @@ struct PurchasePlanCard: View {
     let thenText: String
     let perText: String
     let saveText: String
-    let percentageSaved: Int
+    let percentageSaved: Int?
 
     // MARK: - View Body
     var body: some View {
@@ -218,8 +220,9 @@ struct PurchasePlanCard: View {
 
             Spacer()
 
-            if !plan.hasTrial {
-                Text("\(saveText) \(percentageSaved)%")
+            // Savings badge only on the yearly plan, and only when a weekly plan gives a real comparison.
+            if plan.period == .year, let saved = percentageSaved {
+                Text("\(saveText) \(saved)%")
                     .font(.caption.bold())
                     .foregroundStyle(.white)
                     .padding(8)

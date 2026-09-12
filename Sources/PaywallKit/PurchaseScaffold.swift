@@ -148,7 +148,7 @@ public struct PurchaseScaffold: View {
         selectedHasTrial ? startTrialText : unlockNowText
     }
 
-    private var percentageSaved: Int {
+    private var percentageSaved: Int? {
         PurchasePricing.percentageSaved(in: plans)
     }
 
