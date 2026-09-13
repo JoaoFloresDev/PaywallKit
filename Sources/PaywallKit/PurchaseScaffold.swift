@@ -77,6 +77,8 @@ public struct PurchaseScaffold: View {
     private let thenText: String
     private let saveText: String
     private let nothingRestoredText: String
+    private let plansUnavailableText: String
+    private let retryText: String
     private let periodNames: PurchasePeriodNames
 
     // MARK: - Dependencies
@@ -112,6 +114,8 @@ public struct PurchaseScaffold: View {
         thenText: String = "then",
         saveText: String = "SAVE",
         nothingRestoredText: String = "No purchases restored",
+        plansUnavailableText: String = "Couldn't load the plans. Check your connection and try again.",
+        retryText: String = "Try again",
         periodNames: PurchasePeriodNames = .english
     ) {
         self._isPresented = isPresented
@@ -132,6 +136,8 @@ public struct PurchaseScaffold: View {
         self.thenText = thenText
         self.saveText = saveText
         self.nothingRestoredText = nothingRestoredText
+        self.plansUnavailableText = plansUnavailableText
+        self.retryText = retryText
         self.periodNames = periodNames
     }
 
@@ -247,7 +253,36 @@ public struct PurchaseScaffold: View {
         }
     }
 
+    /// Shown when StoreKit returned no products (offline, or subscriptions not yet live):
+    /// a blank plan area with a dead CTA gives the user nothing to act on.
+    private var plansUnavailable: some View {
+        VStack(spacing: 12) {
+            Text(plansUnavailableText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(retryText) {
+                Task { await store.loadProducts() }
+            }
+            .font(.headline)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("paywall.retry")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical)
+    }
+
+    @ViewBuilder
     private var planList: some View {
+        if plans.isEmpty && !store.isLoading {
+            plansUnavailable
+        } else {
+            planCards
+        }
+    }
+
+    private var planCards: some View {
         VStack(spacing: 10) {
             ForEach(plans) { plan in
                 Button {
@@ -290,7 +325,9 @@ public struct PurchaseScaffold: View {
             }
             .background(accentColor)
             .cornerRadius(6)
-            .opacity(store.isLoading ? 0 : 1)
+            .opacity(store.isLoading ? 0 : (plans.isEmpty ? 0.4 : 1))
+            .disabled(plans.isEmpty)
+            .accessibilityIdentifier("paywall.purchase")
             .padding(.top)
             .padding(.bottom, 4)
         }
@@ -335,6 +372,9 @@ public struct PurchaseScaffold: View {
         shownAt = Date()
         if !store.isPremium { PaywallAnalytics.log("paywall_shown", ["placement": "purchase_scaffold"]) }
         selectDefaultPlanIfNeeded()
+        if store.products.isEmpty && !store.isLoading {
+            Task { await store.loadProducts() }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             withAnimation(.easeIn(duration: allowCloseAfter)) { progress = 1.0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + allowCloseAfter) {
