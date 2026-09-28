@@ -6,6 +6,18 @@ Shared GambitStudio paywall + StoreKit 2 manager. Self-contained GambitStudio st
 
 - **`StoreKitManager`** (singleton, `@MainActor ObservableObject`) — load products, purchase, restore, listen for transaction updates, expose `isPremium`.
 - **`PaywallScaffold`** — drop-in SwiftUI view with hero gradient + features list + plan cards + CTA + restore + premium-active state.
+- **`PurchaseScaffold`** — high-converting alternative (trial detection, SAVE %, cooldown close). See below.
+- **`PostPurchaseView`** — tela pós-compra ("o que você desbloqueou" + 1 próximo passo). See below.
+- **`PaywallAnalytics`** — hook único de eventos (`PaywallAnalytics.Event.*` lista os nomes).
+- **`PaywallCTAFill`** — gradiente padrão do CTA primário (mesma receita do `OnboardingCTAFill`).
+
+## Trial e planos — recomendação (pesquisa 2026-09, achado 6)
+
+**Anual com trial de 7 dias + semanal sem trial.** Dados RevenueCat (17k+ apps, ago/2025-jul/2026): trial de 5-9 dias converte 45,9% vs 39,6% em ≤4 dias; trial de 3 dias é cancelado no dia 0 em 55,4% dos casos (84% até o D1). Semanal+trial tem o maior LTV 12m na Adapty, mas retém 4x pior que anual — o anual (com trial) é o plano-âncora, o semanal é a porta de entrada barata.
+
+- O trial é configurado na ASC (intro offer `FREE_TRIAL`, duração `ONE_WEEK`, 1 POST por território — LEARNINGS #1/#48), não no código. O kit só DETECTA: `product.subscription.introductoryOffer.paymentMode == .freeTrial`.
+- `PurchaseScaffold` mostra o trial no card e troca o CTA pra `startTrialText`. A duração é normalizada junto com a unidade (`PurchasePeriod.normalisedCount`): um trial de 7 dias que o StoreKit reporte como `.day × 7` lê "1-Week Trial" (LEARNINGS #49 — o simulador entrega `P1W` como dia × 7).
+- Health/Fitness: anual como default; Productivity: mensal (achado 7). `StoreKitManager.configure(weekly:yearly:)` continua o modelo padrão.
 
 ## Install
 
@@ -147,3 +159,45 @@ StoreKitManager.shared.configure(
 ```
 
 A % de SAVE é calculada do preço semanal anualizado (×52) vs o anual; trial é detectado via `product.subscription.introductoryOffer`. Os textos de CTA/restore/terms são parâmetros (default em inglês) — passe `String(localized:)` pra localizar. Use `PaywallScaffold` quando quiser o layout mais sóbrio com gradiente; `PurchaseScaffold` quando quiser a versão mais agressiva de conversão.
+
+---
+
+## Pós-compra: `PostPurchaseView`
+
+Tela mostrada logo depois de uma compra bem-sucedida: título, 2-3 linhas de "o que você desbloqueou" (`PaywallFeatureItem`, strings do app) e UM próximo passo (CTA primário). Confirmação + ação concreta reduz cancelamento no dia 0 (pesquisa 2026-09, achados 6 e 9). Botão secundário opcional pra pedir permissão de notificação — entra em loading no tap e some depois da resposta (RULES: loading em request de sistema). Asset-free (hero = SF Symbol). O kit NÃO apresenta sozinho: o host observa `StoreKitManager.shared.isPremium` (ou o retorno de `purchase(_:)`) e apresenta.
+
+```swift
+@ObservedObject private var store = StoreKitManager.shared
+@State private var showPostPurchase = false
+
+.onChange(of: store.isPremium) { _, isPremium in if isPremium { showPostPurchase = true } }
+.fullScreenCover(isPresented: $showPostPurchase) {
+    PostPurchaseView(
+        gradient: [AppColors.primary, AppColors.primary.opacity(0.85)],
+        title: String(localized: "postPurchase.title"),
+        subtitle: String(localized: "postPurchase.subtitle"),
+        unlocked: [
+            .init(symbol: "infinity", title: String(localized: "postPurchase.unlocked1")),
+            .init(symbol: "sparkles", title: String(localized: "postPurchase.unlocked2")),
+            .init(symbol: "icloud.fill", title: String(localized: "postPurchase.unlocked3"))
+        ],
+        primaryButtonText: String(localized: "postPurchase.cta"),
+        onPrimary: { showPostPurchase = false; openFirstProFeature() },
+        notificationsButtonText: String(localized: "postPurchase.notifications"),
+        onEnableNotifications: { await NotificationService.shared.requestAuthorization() }
+    )
+}
+```
+
+Accessibility ids: `paywall.postPurchase.primary`, `paywall.postPurchase.notifications`. Parâmetros opcionais: `heroSymbol` (default `checkmark.seal.fill`), `accent` (cor do texto do CTA; default = primeira cor do gradiente).
+
+## Analytics (`PaywallAnalytics`)
+
+Conectar uma vez no `@main`: `PaywallAnalytics.onEvent = { Analytics.log($0, $1) }` e setar `PaywallAnalytics.source` antes de apresentar. Os nomes estão em `PaywallAnalytics.Event`:
+
+| Constante | Evento | Canônico (taxonomia §2.4) |
+|---|---|---|
+| `paywallShown` / `paywallDismissed` | `paywall_shown` / `paywall_dismissed` | sim |
+| `purchaseStarted` / `purchaseSuccess` / `purchaseAbandoned` / `purchaseRestored` | `purchase_*` | sim |
+| `premiumGateHit` | `premium_gate_hit` | sim |
+| `postPurchaseShown` | `post_purchase_shown` (params `placement`, `rows`, + `source`) | **não** — emitido pela `PostPurchaseView.onAppear`; a taxonomia ainda não tem evento pós-compra (a pesquisa propõe adicionar um). Registrar no report como não-canônico até a taxonomia adotar um nome. |

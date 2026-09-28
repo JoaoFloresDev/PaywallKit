@@ -44,6 +44,27 @@ public enum PurchasePeriod: Sendable, Hashable {
     public static func of(_ period: Product.SubscriptionPeriod) -> PurchasePeriod {
         normalised(unit: period.unit, value: period.value)
     }
+
+    /// Normalises a raw period into the (count, period) pair a user would say:
+    /// `.day × 7` → (1, .week), `.day × 14` → (2, .week), `.day × 3` → (3, .day),
+    /// `.week × 1` → (1, .week), `.month × 12` → (1, .year). Use it for trial wording,
+    /// so a 7-day trial that StoreKit reports as `.day × 7` reads "1-Week", not "7-Week".
+    public static func normalisedCount(unit: Product.SubscriptionPeriod.Unit, value: Int) -> (count: Int, period: PurchasePeriod) {
+        let period = normalised(unit: unit, value: value)
+        switch (unit, period) {
+        case (.day, .week): return (max(1, value / 7), .week)
+        case (.day, .month): return (max(1, value / 30), .month)
+        case (.day, .year): return (max(1, value / 365), .year)
+        case (.week, .month): return (max(1, value / 4), .month)
+        case (.week, .year): return (max(1, value / 52), .year)
+        case (.month, .year): return (max(1, value / 12), .year)
+        default: return (max(1, value), period)
+        }
+    }
+
+    public static func countOf(_ period: Product.SubscriptionPeriod) -> (count: Int, period: PurchasePeriod) {
+        normalisedCount(unit: period.unit, value: period.value)
+    }
 }
 
 // MARK: - Period Names
@@ -118,7 +139,10 @@ struct PurchasePlan: Identifiable {
         self.hasTrial = product.subscription?.introductoryOffer?.paymentMode == .freeTrial
 
         if hasTrial, let offer = product.subscription?.introductoryOffer {
-            self.durationPlanName = names.trialName(offer.period.value, PurchasePeriod.of(offer.period))
+            // Count and unit are normalised together: a 7-day trial reported as
+            // `.day × 7` must read "1-Week Trial", never "7-Week Trial".
+            let trial = PurchasePeriod.countOf(offer.period)
+            self.durationPlanName = names.trialName(trial.count, trial.period)
         } else if let period = self.period {
             self.durationPlanName = names.planName(period)
         } else {

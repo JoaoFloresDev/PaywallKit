@@ -21,6 +21,21 @@ public enum PaywallAnalytics {
     /// Optional A/B variant label attached to every event.
     nonisolated(unsafe) public static var variant: String?
 
+    // MARK: - Event Names
+    /// Every event the kit emits through `onEvent`. All follow event-taxonomy.md §2.4
+    /// except `postPurchaseShown`, which the taxonomy does not list yet (see README).
+    public enum Event {
+        public static let paywallShown = "paywall_shown"
+        public static let paywallDismissed = "paywall_dismissed"
+        public static let purchaseStarted = "purchase_started"
+        public static let purchaseSuccess = "purchase_success"
+        public static let purchaseAbandoned = "purchase_abandoned"
+        public static let purchaseRestored = "purchase_restored"
+        public static let premiumGateHit = "premium_gate_hit"
+        /// Emitted by `PostPurchaseView.onAppear`. Non-canonical: not in the taxonomy yet.
+        public static let postPurchaseShown = "post_purchase_shown"
+    }
+
     // MARK: - Logging
     static func log(_ name: String, _ params: [String: Any] = [:]) {
         var p = params
