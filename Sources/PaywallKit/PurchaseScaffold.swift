@@ -80,6 +80,7 @@ public struct PurchaseScaffold: View {
     private let allowCloseAfter: CGFloat
     private let backgroundColor: Color?
     private let palette: PurchasePalette
+    private let cornerRadius: CGFloat
     private let previewPlans: [PurchasePlanPreview]
 
     // MARK: - Localized Copy
@@ -109,8 +110,10 @@ public struct PurchaseScaffold: View {
     @State private var shownAt = Date()
 
     // MARK: - Init
-    /// `backgroundColor` (nil = transparent, the host paints behind) and `palette`
-    /// (theme-derived defaults) keep the historical look when omitted. `previewPlans`
+    /// `backgroundColor` (nil = transparent, the host paints behind), `palette`
+    /// (theme-derived defaults) and `cornerRadius` (plan cards + CTA, 6 = historical
+    /// look; pass the app radius so the paywall matches its cards) keep the previous
+    /// rendering when omitted. `previewPlans`
     /// renders display-only cards when StoreKit returns no products — for screenshots
     /// and simulator QA where no `.storekit` configuration is applied; never for sale.
     public init(
@@ -137,6 +140,7 @@ public struct PurchaseScaffold: View {
         periodNames: PurchasePeriodNames = .english,
         backgroundColor: Color? = nil,
         palette: PurchasePalette = PurchasePalette(),
+        cornerRadius: CGFloat = 6,
         previewPlans: [PurchasePlanPreview] = []
     ) {
         self._isPresented = isPresented
@@ -162,6 +166,7 @@ public struct PurchaseScaffold: View {
         self.periodNames = periodNames
         self.backgroundColor = backgroundColor
         self.palette = palette
+        self.cornerRadius = cornerRadius
         self.previewPlans = previewPlans
     }
 
@@ -364,6 +369,7 @@ public struct PurchaseScaffold: View {
                         isSelected: selectedProductID == plan.id,
                         accentColor: accentColor,
                         palette: palette,
+                        cornerRadius: cornerRadius,
                         thenText: thenText,
                         perText: perText,
                         saveText: saveText,
@@ -402,7 +408,7 @@ public struct PurchaseScaffold: View {
                 .contentShape(Rectangle())
             }
             .background(accentColor)
-            .cornerRadius(6)
+            .cornerRadius(cornerRadius)
             .opacity(isLoadingPlans ? 0 : (plans.isEmpty ? 0.4 : 1))
             .disabled(plans.isEmpty)
             .accessibilityIdentifier("paywall.purchase")

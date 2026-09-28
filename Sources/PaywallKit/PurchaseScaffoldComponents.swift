@@ -317,6 +317,7 @@ struct PurchasePlanCard: View {
     let isSelected: Bool
     let accentColor: Color
     var palette = PurchasePalette()
+    var cornerRadius: CGFloat = 6
     let thenText: String
     let perText: String
     let saveText: String
@@ -347,7 +348,7 @@ struct PurchasePlanCard: View {
                     .foregroundStyle(palette.onAccent)
                     .padding(8)
                     .background(palette.badgeFill)
-                    .cornerRadius(6)
+                    .cornerRadius(min(6, cornerRadius))
             }
 
             selectionIndicator
@@ -357,11 +358,11 @@ struct PurchasePlanCard: View {
         .frame(minHeight: 56)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(isSelected ? accentColor.opacity(0.08) : palette.cardFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(isSelected ? accentColor : palette.cardBorder, lineWidth: isSelected ? 1.5 : 1)
         )
     }
