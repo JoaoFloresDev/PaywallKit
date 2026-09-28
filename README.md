@@ -153,10 +153,17 @@ StoreKitManager.shared.configure(
         ],
         heroSymbol: "crown.fill",
         termsURL: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"),
-        privacyURL: URL(string: "https://drive.google.com/file/d/147xkp4cekrxhrBYZnzV-J4PzCSqkix7t/view")
+        privacyURL: URL(string: "https://drive.google.com/file/d/147xkp4cekrxhrBYZnzV-J4PzCSqkix7t/view"),
+        backgroundColor: AppColors.background,                       // opcional: o kit pinta a superfície
+        palette: PurchasePalette(text: AppColors.textPrimary,        // opcional: cores da paleta do app
+                                 supportingText: AppColors.textSecondary,
+                                 footerText: AppColors.textSecondary,
+                                 cardFill: AppColors.surface)
     )
 }
 ```
+
+Layout (28/09/2026): a coluna preenche a tela — hero (16% do canvas, 80-140pt), título, benefícios, e os cards de plano logo acima do CTA; a folga se distribui entre as faixas (nada de uma tira vazia), e em canvas curto (SE, iPad compat) a coluna rola. `backgroundColor:` e `palette:` (`PurchasePalette`: `text` / `supportingText` / `footerText` / `cardBorder` / `cardFill` / `onAccent` / `badgeFill`) são opcionais — sem eles o kit deriva as cores do foreground atual. `previewPlans: [PurchasePlanPreview]` renderiza cards só-visuais enquanto a StoreKit não devolve produto (prints/QA no simulador sem `.storekit`) — nunca vendem nada.
 
 A % de SAVE é calculada do preço semanal anualizado (×52) vs o anual; trial é detectado via `product.subscription.introductoryOffer`. Os textos de CTA/restore/terms são parâmetros (default em inglês) — passe `String(localized:)` pra localizar. Use `PaywallScaffold` quando quiser o layout mais sóbrio com gradiente; `PurchaseScaffold` quando quiser a versão mais agressiva de conversão.
 
