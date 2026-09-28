@@ -140,27 +140,35 @@ public struct TrialTimelineView: View {
     }
 
     // MARK: - View Body
+    /// Three columns joined by a rail — compact enough to sit between the plan cards and the CTA
+    /// without pushing the CTA below the fold on a 6.1" phone.
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            milestone(symbol: "lock.open.fill", label: strings.todayLabel, title: strings.accessTitle,
-                      isFirst: true, isLast: false, id: "today")
-            milestone(symbol: "bell.fill", label: strings.dayLabel(timeline.reminderDay), title: strings.reminderTitle,
-                      isFirst: false, isLast: false, id: "reminder")
-            milestone(symbol: "creditcard.fill", label: strings.dayLabel(timeline.chargeDay), title: strings.chargeTitle(price),
-                      isFirst: false, isLast: true, id: "charge")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 6) {
+                milestone(symbol: "lock.open.fill", label: strings.todayLabel, title: strings.accessTitle, id: "today")
+                milestone(symbol: "bell.fill", label: strings.dayLabel(timeline.reminderDay), title: strings.reminderTitle, id: "reminder")
+                milestone(symbol: "creditcard.fill", label: strings.dayLabel(timeline.chargeDay), title: strings.chargeTitle(price), id: "charge")
+            }
+            .background(alignment: .top) {
+                // The rail behind the three dots (inset to the first/last dot centres).
+                Rectangle()
+                    .fill(accentColor.opacity(0.3))
+                    .frame(height: 2)
+                    .padding(.horizontal, 44)
+                    .padding(.top, 13)
+            }
             if let note = strings.cancelNote {
                 Text(note)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(palette.supportingText)
-                    .multilineTextAlignment(.leading)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
-                    .padding(.leading, 40)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius).fill(palette.cardFill))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(palette.cardBorder, lineWidth: 1))
         .accessibilityElement(children: .contain)
@@ -168,43 +176,27 @@ public struct TrialTimelineView: View {
     }
 
     // MARK: - Subviews
-    /// One row: a dot on a vertical rail (the rail is hidden above the first and below the last).
-    private func milestone(symbol: String, label: String, title: String, isFirst: Bool, isLast: Bool, id: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(accentColor.opacity(isFirst ? 0 : 0.35))
-                    .frame(width: 2, height: 8)
-                ZStack {
-                    Circle().fill(accentColor.opacity(0.15)).frame(width: 28, height: 28)
-                    Image(systemName: symbol)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(accentColor)
-                }
-                Rectangle()
-                    .fill(accentColor.opacity(isLast ? 0 : 0.35))
-                    .frame(width: 2)
-                    .frame(maxHeight: .infinity)
-            }
-            .frame(width: 28)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.caption.weight(.bold))
+    /// One column: dot on the rail, day label, one short line.
+    private func milestone(symbol: String, label: String, title: String, id: String) -> some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle().fill(palette.cardFill).frame(width: 30, height: 30)
+                Circle().fill(accentColor.opacity(0.18)).frame(width: 28, height: 28)
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(accentColor)
-                    .textCase(.uppercase)
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.text)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, 8)
-            .padding(.bottom, isLast ? 0 : 10)
-
-            Spacer(minLength: 0)
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(accentColor)
+                .textCase(.uppercase)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(palette.text)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("paywall.trialTimeline.\(id)")
         .accessibilityLabel("\(label), \(title)")

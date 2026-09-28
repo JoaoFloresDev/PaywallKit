@@ -52,29 +52,29 @@ struct PurchaseSocialProofView: View {
 
     // MARK: - View Body
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if proof.rating != nil || proof.ratingCountText != nil {
                 ratingRow
             }
             if let quote = proof.quote {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\u{201C}\(quote)\u{201D}")
-                        .font(.subheadline)
+                        .font(.footnote)
                         .italic()
                         .foregroundStyle(palette.text)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if let author = proof.author {
                         Text(author)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(palette.supportingText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: cornerRadius).fill(palette.cardFill))
         .accessibilityElement(children: .combine)

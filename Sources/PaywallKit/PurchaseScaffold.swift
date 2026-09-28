@@ -213,6 +213,12 @@ public struct PurchaseScaffold: View {
         selectedPlan?.hasTrial ?? false
     }
 
+    /// Social proof and/or the trial timeline add ~200pt to the column: the top block tightens
+    /// (smaller hero, shorter bands, 17pt benefits) so the CTA stays above the fold on a 6.1" phone.
+    private var isDense: Bool {
+        socialProof != nil || trialTimeline != nil
+    }
+
     /// The exit offer auto-presents once per install, only when the app configured a product.
     private var canPresentExitOffer: Bool {
         exitOffer != nil && ExitOffer.canPresent() && !store.isPremium
@@ -317,26 +323,26 @@ public struct PurchaseScaffold: View {
             PurchaseHeroView(heroSymbol: heroSymbol, heroImageName: heroImageName,
                              accentColor: accentColor, height: heroHeight(for: canvasHeight))
 
-            Spacer(minLength: 20).frame(maxHeight: 40)
+            Spacer(minLength: isDense ? 12 : 20).frame(maxHeight: isDense ? 20 : 40)
 
             Text(title)
-                .font(.system(size: 30, weight: .semibold))
+                .font(.system(size: isDense ? 26 : 30, weight: .semibold))
                 .foregroundStyle(palette.text)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 20).frame(maxHeight: 48)
+            Spacer(minLength: isDense ? 12 : 20).frame(maxHeight: isDense ? 20 : 48)
 
             featureList
 
             if let socialProof {
-                Spacer(minLength: 16).frame(maxHeight: 24)
+                Spacer(minLength: 12).frame(maxHeight: 16)
                 PurchaseSocialProofView(proof: socialProof, accentColor: accentColor,
                                         palette: palette, cornerRadius: cornerRadius)
             }
 
-            Spacer(minLength: 16)
-            Spacer(minLength: 8)
+            Spacer(minLength: isDense ? 12 : 16)
+            Spacer(minLength: isDense ? 0 : 8)
 
             planList
             trialTimelineBlock
@@ -348,17 +354,19 @@ public struct PurchaseScaffold: View {
     }
 
     /// 16% of the canvas, clamped: ~120pt on a 6.1"-6.9" phone, 80pt on the smallest canvases.
+    /// Dense layout (social proof / timeline): 10%, 64-88pt.
     private func heroHeight(for canvasHeight: CGFloat) -> CGFloat {
-        min(140, max(80, canvasHeight * 0.16))
+        if isDense { return min(88, max(64, canvasHeight * 0.10)) }
+        return min(140, max(80, canvasHeight * 0.16))
     }
 
     private var featureList: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: isDense ? 8 : 14) {
             ForEach(features) { feature in
                 PurchaseFeatureRow(feature: feature, accentColor: accentColor, palette: palette)
             }
         }
-        .font(.system(size: 19))
+        .font(.system(size: isDense ? 17 : 19))
         .padding(.horizontal, 8)
     }
 
@@ -433,7 +441,7 @@ public struct PurchaseScaffold: View {
                 palette: palette,
                 cornerRadius: cornerRadius
             )
-            .padding(.top, 10)
+            .padding(.top, 8)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
@@ -466,7 +474,7 @@ public struct PurchaseScaffold: View {
             .opacity(isLoadingPlans ? 0 : (plans.isEmpty ? 0.4 : 1))
             .disabled(plans.isEmpty)
             .accessibilityIdentifier("paywall.purchase")
-            .padding(.top)
+            .padding(.top, isDense ? 10 : 16)
         }
     }
 
