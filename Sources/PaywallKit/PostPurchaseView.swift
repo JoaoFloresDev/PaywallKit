@@ -43,6 +43,8 @@ public struct PostPurchaseView: View {
     private let onPrimary: () -> Void
     private let notificationsButtonText: String?
     private let onEnableNotifications: (@MainActor () async -> Void)?
+    private let remindersButtonText: String?
+    private let onEnableReminders: (@MainActor () async -> Void)?
 
     // MARK: - State
     @State private var showHero = false
@@ -60,6 +62,10 @@ public struct PostPurchaseView: View {
     ///     permission. The button shows a spinner until it returns and is hidden afterwards
     ///     (asked once here; the app keeps its own toggle in Settings). Omit both
     ///     notification parameters to hide the secondary button.
+    ///   - onEnableReminders: trial-reminder opt-in (research 2026-09, finding 6). Same button and
+    ///     loading rule as `onEnableNotifications`, meant to call
+    ///     `TrialReminderScheduler.enable(trialEnd:strings:)` — it asks the permission and schedules.
+    ///     When both closures are given, the reminders pair wins (the permission is the same prompt).
     public init(
         gradient: [Color],
         title: String,
@@ -70,7 +76,9 @@ public struct PostPurchaseView: View {
         notificationsButtonText: String? = nil,
         onEnableNotifications: (@MainActor () async -> Void)? = nil,
         heroSymbol: String = "checkmark.seal.fill",
-        accent: Color? = nil
+        accent: Color? = nil,
+        remindersButtonText: String? = nil,
+        onEnableReminders: (@MainActor () async -> Void)? = nil
     ) {
         precondition(gradient.count >= 2, "PostPurchaseView requires at least 2 gradient colors")
         precondition(!unlocked.isEmpty && unlocked.count <= 4, "PostPurchaseView shows 2-3 unlocked rows (max 4)")
@@ -84,10 +92,22 @@ public struct PostPurchaseView: View {
         self.onPrimary = onPrimary
         self.notificationsButtonText = notificationsButtonText
         self.onEnableNotifications = onEnableNotifications
+        self.remindersButtonText = remindersButtonText
+        self.onEnableReminders = onEnableReminders
+    }
+
+    private var secondaryButtonText: String? {
+        if onEnableReminders != nil, let remindersButtonText { return remindersButtonText }
+        if onEnableNotifications != nil, let notificationsButtonText { return notificationsButtonText }
+        return nil
+    }
+
+    private var secondaryAction: (@MainActor () async -> Void)? {
+        onEnableReminders ?? onEnableNotifications
     }
 
     private var showsNotificationsButton: Bool {
-        notificationsButtonText != nil && onEnableNotifications != nil && !notificationsHandled
+        secondaryButtonText != nil && !notificationsHandled
     }
 
     // MARK: - View Body
@@ -209,7 +229,7 @@ public struct PostPurchaseView: View {
     private var notificationsButton: some View {
         Button(action: requestNotifications) {
             ZStack {
-                Text(notificationsButtonText ?? "")
+                Text(secondaryButtonText ?? "")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
@@ -229,8 +249,8 @@ public struct PostPurchaseView: View {
             .contentShape(Rectangle())
         }
         .disabled(isRequestingNotifications)
-        .accessibilityIdentifier("paywall.postPurchase.notifications")
-        .accessibilityLabel(notificationsButtonText ?? "")
+        .accessibilityIdentifier(onEnableReminders != nil ? "paywall.postPurchase.reminders" : "paywall.postPurchase.notifications")
+        .accessibilityLabel(secondaryButtonText ?? "")
     }
 
     // MARK: - Actions
@@ -248,10 +268,10 @@ public struct PostPurchaseView: View {
     /// Loading state for the system prompt (RULES: every button that triggers a
     /// permission request spins until the completion arrives, on every path).
     private func requestNotifications() {
-        guard let onEnableNotifications, !isRequestingNotifications else { return }
+        guard let secondaryAction, !isRequestingNotifications else { return }
         isRequestingNotifications = true
         Task { @MainActor in
-            await onEnableNotifications()
+            await secondaryAction()
             isRequestingNotifications = false
             withAnimation(.easeInOut(duration: 0.25)) { notificationsHandled = true }
         }

@@ -28,6 +28,9 @@ public final class StoreKitManager: NSObject, ObservableObject {
     @Published public private(set) var purchasedProductIDs: Set<String> = []
     @Published public private(set) var isLoading = false
     @Published public private(set) var errorMessage: String?
+    /// End of the free trial the current entitlement is in; nil when not in a trial (or iOS < 17.2).
+    /// Feed it to `TrialReminderScheduler.enable(trialEnd:strings:)` from the post-purchase screen.
+    @Published public private(set) var trialEndDate: Date?
 
     // MARK: - Private
     private var productIDs: [String] = []
@@ -114,6 +117,11 @@ public final class StoreKitManager: NSObject, ObservableObject {
     }
 
     public func purchase(_ product: Product) async throws -> Transaction? {
+        try await purchase(product, options: [])
+    }
+
+    /// Same, with purchase options (a signed promotional offer for `ExitOfferSheet`, app account token…).
+    public func purchase(_ product: Product, options: Set<Product.PurchaseOption>) async throws -> Transaction? {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -122,7 +130,7 @@ public final class StoreKitManager: NSObject, ObservableObject {
         PaywallAnalytics.log("purchase_started", pp)
         let result: Product.PurchaseResult
         do {
-            result = try await product.purchase()
+            result = try await product.purchase(options: options)
         } catch {
             PaywallAnalytics.log("purchase_abandoned", pp.merging(["reason": "failed"]) { $1 })
             throw error
@@ -164,12 +172,21 @@ public final class StoreKitManager: NSObject, ObservableObject {
     // MARK: - Private
     private func updatePurchasedProducts() async {
         var purchased: Set<String> = []
+        var trialEnd: Date?
         for await result in Transaction.currentEntitlements {
             if case .verified(let transaction) = result, transaction.revocationDate == nil {
                 purchased.insert(transaction.productID)
+                if #available(iOS 17.2, *), let end = TrialReminderScheduler.trialEnd(of: transaction) {
+                    trialEnd = end
+                }
             }
         }
         purchasedProductIDs = purchased
+        trialEndDate = trialEnd
+        // The trial converted (or the plan changed): a "trial ends soon" reminder would now be false.
+        if trialEnd == nil, !purchased.isEmpty, TrialReminderScheduler.isScheduled {
+            TrialReminderScheduler.cancel()
+        }
         UserDefaults.standard.set(!purchased.isEmpty, forKey: "isPremium")
     }
 

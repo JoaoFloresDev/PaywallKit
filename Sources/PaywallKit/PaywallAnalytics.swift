@@ -20,10 +20,13 @@ public enum PaywallAnalytics {
     nonisolated(unsafe) public static var source: String = "unknown"
     /// Optional A/B variant label attached to every event.
     nonisolated(unsafe) public static var variant: String?
+    /// First-launch date of this install. When set, every event carries `days_since_install`
+    /// (Int) — day-0 revenue vs total is the research 2026-09 metric #7. The app persists the
+    /// date on first launch and sets it here once at launch, next to `onEvent`.
+    nonisolated(unsafe) public static var installDate: Date?
 
     // MARK: - Event Names
-    /// Every event the kit emits through `onEvent`. All follow event-taxonomy.md §2.4
-    /// except `postPurchaseShown`, which the taxonomy does not list yet (see README).
+    /// Every event the kit emits through `onEvent`. All follow event-taxonomy.md §2.4.
     public enum Event {
         public static let paywallShown = "paywall_shown"
         public static let paywallDismissed = "paywall_dismissed"
@@ -32,8 +35,14 @@ public enum PaywallAnalytics {
         public static let purchaseAbandoned = "purchase_abandoned"
         public static let purchaseRestored = "purchase_restored"
         public static let premiumGateHit = "premium_gate_hit"
-        /// Emitted by `PostPurchaseView.onAppear`. Non-canonical: not in the taxonomy yet.
+        /// Emitted by `PostPurchaseView.onAppear`.
         public static let postPurchaseShown = "post_purchase_shown"
+        /// A plan card was tapped in `PurchaseScaffold` (params: `product_id`, `period`, `trial`).
+        public static let planSelected = "plan_selected"
+        /// `ExitOfferSheet` appeared (params: `reason` dismiss/abandon, `product_id`).
+        public static let exitOfferShown = "exit_offer_shown"
+        /// `TrialReminderScheduler` queued one local reminder (params: `days_before`, `kind`).
+        public static let trialReminderScheduled = "trial_reminder_scheduled"
     }
 
     // MARK: - Logging
@@ -41,6 +50,7 @@ public enum PaywallAnalytics {
         var p = params
         p["source"] = source
         if let variant { p["variant"] = variant }
+        if let days = daysSinceInstall() { p["days_since_install"] = days }
         onEvent?(name, p)
     }
 
@@ -55,6 +65,12 @@ public enum PaywallAnalytics {
     }
 
     // MARK: - Helpers
+    /// Whole days between `installDate` and now; nil when the app never set the date.
+    static func daysSinceInstall(now: Date = Date()) -> Int? {
+        guard let installDate else { return nil }
+        return max(0, Int(now.timeIntervalSince(installDate) / 86_400))
+    }
+
     static func period(of product: Product) -> String {
         guard let sub = product.subscription else { return "lifetime" }
         switch sub.subscriptionPeriod.unit {

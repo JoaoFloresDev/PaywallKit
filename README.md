@@ -7,7 +7,11 @@ Shared GambitStudio paywall + StoreKit 2 manager. Self-contained GambitStudio st
 - **`StoreKitManager`** (singleton, `@MainActor ObservableObject`) — load products, purchase, restore, listen for transaction updates, expose `isPremium`.
 - **`PaywallScaffold`** — drop-in SwiftUI view with hero gradient + features list + plan cards + CTA + restore + premium-active state.
 - **`PurchaseScaffold`** — high-converting alternative (trial detection, SAVE %, cooldown close). See below.
-- **`PostPurchaseView`** — tela pós-compra ("o que você desbloqueou" + 1 próximo passo). See below.
+- **`PostPurchaseView`** — tela pós-compra ("o que você desbloqueou" + 1 próximo passo + opt-in dos lembretes de trial). See below.
+- **`TrialTimelineView`** — "como funciona seu trial" (Hoje / Dia 5 / Dia 7), renderizado pelo `PurchaseScaffold` enquanto o plano selecionado tem trial. See below.
+- **`TrialReminderScheduler`** — 3 notificações locais do trial (+6 h, T-2 dias, último dia), só depois do opt-in; canceladas quando o trial converte. See below.
+- **`ExitOfferSheet`** — oferta de saída (intro offer REAL da ASC) uma vez por usuário, prazo de 24 h persistido. See below.
+- **`PurchaseSocialProof`** — slot de prova social (nota real + 1 citação) do `PurchaseScaffold`.
 - **`PaywallAnalytics`** — hook único de eventos (`PaywallAnalytics.Event.*` lista os nomes).
 - **`PaywallCTAFill`** — gradiente padrão do CTA primário (mesma receita do `OnboardingCTAFill`).
 
@@ -208,4 +212,80 @@ Conectar uma vez no `@main`: `PaywallAnalytics.onEvent = { Analytics.log($0, $1)
 | `paywallShown` / `paywallDismissed` | `paywall_shown` / `paywall_dismissed` | sim |
 | `purchaseStarted` / `purchaseSuccess` / `purchaseAbandoned` / `purchaseRestored` | `purchase_*` | sim |
 | `premiumGateHit` | `premium_gate_hit` | sim |
-| `postPurchaseShown` | `post_purchase_shown` (params `placement`, `rows`, + `source`) | **não** — emitido pela `PostPurchaseView.onAppear`; a taxonomia ainda não tem evento pós-compra (a pesquisa propõe adicionar um). Registrar no report como não-canônico até a taxonomia adotar um nome. |
+| `postPurchaseShown` | `post_purchase_shown` (params `placement`, `rows`, + `source`) | sim (desde 28/09/2026) — emitido pela `PostPurchaseView.onAppear` |
+| `planSelected` | `plan_selected` (`product_id`, `period`, `trial`) | sim — tap num card do `PurchaseScaffold` (anual vs semanal ANTES do CTA) |
+| `exitOfferShown` | `exit_offer_shown` (`reason` dismiss/abandon, `product_id`) | sim — `ExitOfferSheet.onAppear` |
+| `trialReminderScheduled` | `trial_reminder_scheduled` (`days_before`, `kind`) | sim — um por lembrete agendado pelo `TrialReminderScheduler` |
+
+`PaywallAnalytics.installDate` (opcional, setar no `@main` junto do `onEvent`, persistindo a data do 1º launch): quando definido, TODO evento carrega `days_since_install` (Int) — receita do dia 0 vs total (pesquisa 2026-09, métrica 7).
+
+---
+
+## Kits r2 (28/09/2026) — o que a pesquisa 2026-09 pediu, tudo aditivo
+
+**Auditoria do toggle de trial (achado 7):** o `PurchaseScaffold` NUNCA teve o "free trial toggle" do código original (a Apple rejeita por 3.1.2 desde jan/2026) — o trial mora em UM plano (intro offer da ASC) e o usuário só escolhe o card. Anual (com trial) pré-selecionado porque os produtos vêm ordenados por preço; o semanal aparece como âncora com o preço por semana. Não adicionar switch de trial.
+
+### `TrialTimelineView` — "como funciona seu trial"
+Três marcos (Hoje: acesso total · Dia N-2: lembrete · Dia N: cobrança), dias calculados do intro offer do produto (`TrialTimeline.days(of:)`), preço pós-trial na linha da cobrança (exigência da Apple, achado 8). Só aparece enquanto o plano selecionado tem trial. Strings do app:
+
+```swift
+PurchaseScaffold(
+    ...,
+    trialTimeline: TrialTimelineStrings(
+        todayLabel: String(localized: "paywall.trial.today"),            // "Hoje"
+        dayLabel: { String(localized: "paywall.trial.dayN \($0)") },     // "Dia 5"
+        accessTitle: String(localized: "paywall.trial.access"),          // "Acesso total a tudo"
+        reminderTitle: String(localized: "paywall.trial.reminderRow"),   // "Avisamos antes de cobrar"
+        chargeTitle: { String(localized: "paywall.trial.charge \($0)") }, // "Cobrança de R$ 99,90 por ano"
+        cancelNote: String(localized: "paywall.trial.cancelNote")        // opcional
+    )
+)
+```
+Standalone: `TrialTimelineView(trialDays:price:strings:accentColor:palette:cornerRadius:)`. Id `paywall.trialTimeline` (+ `.today/.reminder/.charge`).
+
+### `TrialReminderScheduler` + opt-in na `PostPurchaseView`
+Cumpre a promessa do timeline (achado 6: opt-in de push 6% → 74% quando prometido no paywall). `enable(trialEnd:strings:)` pede a permissão (alert+sound) e agenda **+6 h** (nudge de valor), **T-2 dias 10:00** e **manhã do último dia 09:00** (pula o que já passou ou não cabe num trial curto). Ids `paywallkit.trialReminder.*`; `cancel()` remove só esses. O `StoreKitManager` expõe `trialEndDate` (do entitlement em trial, iOS 17.2+) e **cancela sozinho** quando chega uma transação que não é mais trial. Cada lembrete emite `trial_reminder_scheduled(days_before, kind)`.
+
+```swift
+PostPurchaseView(
+    ...,
+    remindersButtonText: String(localized: "postPurchase.reminders"),   // "Me avise antes de cobrar"
+    onEnableReminders: {
+        guard let end = StoreKitManager.shared.trialEndDate else { return }
+        await TrialReminderScheduler.enable(trialEnd: end, strings: TrialReminderStrings(
+            valueNudgeTitle: ..., valueNudgeBody: ...,
+            beforeEndTitle: ..., beforeEndBody: { days in ... },
+            lastDayTitle: ..., lastDayBody: ...
+        ))
+    }
+)
+```
+O botão entra em loading no tap e some depois da resposta (mesma regra do `onEnableNotifications`; se os dois forem passados, o de lembretes vence). Id `paywall.postPurchase.reminders`. `TrialReminderScheduler.plan(trialEnd:now:calendar:)` é puro — testável sem UNUserNotificationCenter.
+
+### `ExitOfferSheet` — oferta de saída, uma vez, com prazo real
+Aparece **uma vez por instalação** depois de fechar o paywall (`reason: .dismiss`) ou cancelar a folha de compra (`reason: .abandon`), com um **produto separado** que tenha intro offer na ASC/`.storekit` (ex.: mensal com 1º mês com desconto) — o kit mostra `introductoryOffer.displayPrice` riscando o preço cheio; **nunca inventa desconto**. Prazo de 24 h persistido (`ExitOffer.deadline`), contagem real na tela, nunca reinicia (achado 8: urgência só se for verdade). Emite `exit_offer_shown`.
+
+```swift
+PurchaseScaffold(
+    ...,
+    exitOffer: ExitOfferConfiguration(
+        productID: "app.pro.monthly",
+        strings: ExitOfferStrings(
+            title: String(localized: "exitOffer.title"),
+            subtitle: String(localized: "exitOffer.subtitle"),
+            priceLine: { offer, regular in String(localized: "exitOffer.priceLine \(offer) \(regular)") },
+            deadlineLabel: { String(localized: "exitOffer.deadline \($0)") },
+            ctaText: String(localized: "exitOffer.cta"),
+            dismissText: String(localized: "exitOffer.dismiss"),
+            unavailableText: String(localized: "exitOffer.unavailable")
+        ),
+        purchaseOptions: [],                      // promotional offer assinado, se houver
+        preview: ExitOfferPreview(offerPrice: "R$ 3,49", regularPrice: "R$ 6,99")  // só QA/prints
+    )
+)
+```
+Standalone: `ExitOfferSheet(productID:strings:accentColor:...:reason:onFinished:)` num `.sheet` do app. Estado: `ExitOffer.hasBeenShown` / `isActive()` / `markShown()`; `ExitOffer.reset()` só em DEBUG. Ids `paywall.exitOffer`, `.cta`, `.dismiss`, `.deadline`. O mensal da oferta fica FORA de `StoreKitManager.configure(weekly:yearly:)` — o paywall principal continua com 2 planos (achado 12).
+
+### `socialProof:` no `PurchaseScaffold`
+`PurchaseSocialProof(rating:ratingCountText:quote:author:)` entre os benefícios e os cards. Passe a nota REAL da loja (o kit não valida) — "4,9 estrelas" inventado é anti-cue do visual review. Id `paywall.socialProof`.
+

@@ -11,9 +11,15 @@
 //  The original stub PurchaseModel is replaced by StoreKitManager.shared and the
 //  hero image is an SF Symbol by default so the kit drops in with zero assets.
 //
+//  Trial-toggle audit (28/09/2026, research 2026-09 finding 7): this scaffold never had the
+//  "free trial toggle" of the original (Apple rejects it under 3.1.2 since Jan/2026) — the
+//  trial lives in ONE plan (the intro offer configured in ASC) and the user only picks a card.
+//  Keep it that way: no switch that adds/removes the trial.
+//
 //  Layout: one column that fills the screen on 6.1"-6.9" phones — hero, title,
-//  benefits, then the plan cards sitting directly above the CTA and the legal
-//  footer. The slack is split between the bands (top / hero-title / title-benefits /
+//  benefits, optional social proof, then the plan cards (annual pre-selected, weekly as the
+//  price anchor), the trial timeline while the selected plan has a trial, the CTA and the
+//  legal footer. The slack is split between the bands (top / hero-title / title-benefits /
 //  benefits-plans) instead of piling into a single empty stripe, and the column
 //  scrolls on short canvases (iPhone SE, iPad compatibility mode) so nothing is
 //  squeezed into truncation. Colors come from `PurchasePalette` (theme-derived
@@ -82,6 +88,9 @@ public struct PurchaseScaffold: View {
     private let palette: PurchasePalette
     private let cornerRadius: CGFloat
     private let previewPlans: [PurchasePlanPreview]
+    private let socialProof: PurchaseSocialProof?
+    private let trialTimeline: TrialTimelineStrings?
+    private let exitOffer: ExitOfferConfiguration?
 
     // MARK: - Localized Copy
     private let startTrialText: String
@@ -101,13 +110,13 @@ public struct PurchaseScaffold: View {
 
     // MARK: - State
     @State private var selectedProductID: String = ""
-    @State private var shakeDegrees: Double = 0
-    @State private var shakeZoom: CGFloat = 0.9
     @State private var showCloseButton = false
     @State private var progress: CGFloat = 0
     @State private var showNoneRestoredAlert = false
     @State private var showTermsSheet = false
     @State private var shownAt = Date()
+    @State private var showExitOffer = false
+    @State private var exitOfferReason: ExitOfferReason = .dismiss
 
     // MARK: - Init
     /// `backgroundColor` (nil = transparent, the host paints behind), `palette`
@@ -116,6 +125,9 @@ public struct PurchaseScaffold: View {
     /// rendering when omitted. `previewPlans`
     /// renders display-only cards when StoreKit returns no products — for screenshots
     /// and simulator QA where no `.storekit` configuration is applied; never for sale.
+    /// `socialProof` (real rating + one quote, between benefits and plans), `trialTimeline`
+    /// ("Today / Day 5 / Day 7" under the plan cards while the selected plan has a trial) and
+    /// `exitOffer` (a real intro-offer product shown once after dismiss/abandon) are opt-in.
     public init(
         isPresented: Binding<Bool>,
         title: String,
@@ -141,7 +153,10 @@ public struct PurchaseScaffold: View {
         backgroundColor: Color? = nil,
         palette: PurchasePalette = PurchasePalette(),
         cornerRadius: CGFloat = 6,
-        previewPlans: [PurchasePlanPreview] = []
+        previewPlans: [PurchasePlanPreview] = [],
+        socialProof: PurchaseSocialProof? = nil,
+        trialTimeline: TrialTimelineStrings? = nil,
+        exitOffer: ExitOfferConfiguration? = nil
     ) {
         self._isPresented = isPresented
         self.title = title
@@ -168,6 +183,9 @@ public struct PurchaseScaffold: View {
         self.palette = palette
         self.cornerRadius = cornerRadius
         self.previewPlans = previewPlans
+        self.socialProof = socialProof
+        self.trialTimeline = trialTimeline
+        self.exitOffer = exitOffer
     }
 
     // MARK: - Computed
@@ -187,8 +205,17 @@ public struct PurchaseScaffold: View {
         store.isLoading && !usesPreviewPlans
     }
 
+    private var selectedPlan: PurchasePlan? {
+        plans.first { $0.id == selectedProductID }
+    }
+
     private var selectedHasTrial: Bool {
-        plans.first { $0.id == selectedProductID }?.hasTrial ?? false
+        selectedPlan?.hasTrial ?? false
+    }
+
+    /// The exit offer auto-presents once per install, only when the app configured a product.
+    private var canPresentExitOffer: Bool {
+        exitOffer != nil && ExitOffer.canPresent() && !store.isPremium
     }
 
     private var callToActionText: String {
@@ -220,6 +247,21 @@ public struct PurchaseScaffold: View {
         .onChange(of: store.isPremium) { _, isPremium in
             if isPremium { dismissSoon() }
         }
+        .sheet(isPresented: $showExitOffer, onDismiss: { if !store.isPremium { isPresented = false } }) {
+            if let exitOffer {
+                ExitOfferSheet(
+                    configuration: exitOffer,
+                    accentColor: accentColor,
+                    palette: palette,
+                    backgroundColor: backgroundColor,
+                    cornerRadius: cornerRadius,
+                    reason: exitOfferReason,
+                    onFinished: { showExitOffer = false }
+                )
+                .presentationDetents([.fraction(0.62), .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     // MARK: - Subviews
@@ -241,7 +283,12 @@ public struct PurchaseScaffold: View {
                 Button {
                     PaywallAnalytics.log("paywall_dismissed", ["placement": "purchase_scaffold",
                                                                "seconds": Int(Date().timeIntervalSince(shownAt))])
-                    isPresented = false
+                    if canPresentExitOffer {
+                        exitOfferReason = .dismiss
+                        showExitOffer = true
+                    } else {
+                        isPresented = false
+                    }
                 } label: {
                     Image(systemName: "xmark")
                         .resizable()
@@ -267,7 +314,8 @@ public struct PurchaseScaffold: View {
         VStack(spacing: 0) {
             Spacer(minLength: 16)
 
-            hero(height: heroHeight(for: canvasHeight))
+            PurchaseHeroView(heroSymbol: heroSymbol, heroImageName: heroImageName,
+                             accentColor: accentColor, height: heroHeight(for: canvasHeight))
 
             Spacer(minLength: 20).frame(maxHeight: 40)
 
@@ -281,10 +329,17 @@ public struct PurchaseScaffold: View {
 
             featureList
 
+            if let socialProof {
+                Spacer(minLength: 16).frame(maxHeight: 24)
+                PurchaseSocialProofView(proof: socialProof, accentColor: accentColor,
+                                        palette: palette, cornerRadius: cornerRadius)
+            }
+
             Spacer(minLength: 16)
             Spacer(minLength: 8)
 
             planList
+            trialTimelineBlock
             purchaseButton
             footer
         }
@@ -295,27 +350,6 @@ public struct PurchaseScaffold: View {
     /// 16% of the canvas, clamped: ~120pt on a 6.1"-6.9" phone, 80pt on the smallest canvases.
     private func heroHeight(for canvasHeight: CGFloat) -> CGFloat {
         min(140, max(80, canvasHeight * 0.16))
-    }
-
-    private func hero(height: CGFloat) -> some View {
-        Group {
-            if let heroImageName {
-                Image(heroImageName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Image(systemName: heroSymbol)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .foregroundStyle(accentColor)
-            }
-        }
-        .frame(height: height)
-        .scaleEffect(shakeZoom)
-        .rotationEffect(.degrees(shakeDegrees))
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { startShaking() }
-        }
     }
 
     private var featureList: some View {
@@ -363,6 +397,9 @@ public struct PurchaseScaffold: View {
             ForEach(plans) { plan in
                 Button {
                     withAnimation { selectedProductID = plan.id }
+                    PaywallAnalytics.log(PaywallAnalytics.Event.planSelected,
+                                         ["product_id": plan.id, "period": plan.period.map(periodName) ?? "lifetime",
+                                          "trial": plan.hasTrial])
                 } label: {
                     PurchasePlanCard(
                         plan: plan,
@@ -384,13 +421,30 @@ public struct PurchaseScaffold: View {
         .overlay { if isLoadingPlans { ProgressView().tint(palette.text) } }
     }
 
+    /// "How your trial works" — only while the selected plan has a trial (research 2026-09, finding 6).
+    @ViewBuilder
+    private var trialTimelineBlock: some View {
+        if let trialTimeline, let plan = selectedPlan, plan.hasTrial, let days = plan.trialDays, !isLoadingPlans {
+            TrialTimelineView(
+                trialDays: days,
+                price: plan.unitLabel.isEmpty ? plan.price : "\(plan.price) \(perText) \(plan.unitLabel)",
+                strings: trialTimeline,
+                accentColor: accentColor,
+                palette: palette,
+                cornerRadius: cornerRadius
+            )
+            .padding(.top, 10)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
     private var purchaseButton: some View {
         ZStack {
             ProgressView().tint(palette.text).opacity(isLoadingPlans ? 1 : 0)
 
             Button {
                 guard !store.isLoading, let product = store.product(for: selectedProductID) else { return }
-                Task { try? await store.purchase(product) }
+                Task { await purchase(product) }
             } label: {
                 HStack {
                     Spacer()
@@ -453,6 +507,24 @@ public struct PurchaseScaffold: View {
         .padding(.bottom, 8)
     }
 
+    // MARK: - Purchase
+    /// A cancelled system sheet is the moment the exit offer is for (finding 5: "abandon").
+    private func purchase(_ product: Product) async {
+        let transaction = try? await store.purchase(product)
+        guard transaction == nil, !store.isPremium, canPresentExitOffer else { return }
+        exitOfferReason = .abandon
+        showExitOffer = true
+    }
+
+    private func periodName(_ period: PurchasePeriod) -> String {
+        switch period {
+        case .day: return "daily"
+        case .week: return "weekly"
+        case .month: return "monthly"
+        case .year: return "yearly"
+        }
+    }
+
     // MARK: - Lifecycle
     private func handleAppear() {
         if store.isPremium { isPresented = false }
@@ -481,36 +553,6 @@ public struct PurchaseScaffold: View {
 
     private func dismissSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { isPresented = false }
-    }
-
-    // MARK: - Hero Shake
-    private func startShaking() {
-        let total = 0.7
-        let shakes = 3
-        let initialAngle = 10.0
-
-        withAnimation(.easeInOut(duration: total / 2)) {
-            shakeZoom = 0.95
-            DispatchQueue.main.asyncAfter(deadline: .now() + total / 2) {
-                withAnimation(.easeInOut(duration: total / 2)) { shakeZoom = 0.9 }
-            }
-        }
-
-        for i in 0..<shakes {
-            let delay = (total / Double(shakes)) * Double(i)
-            let angle = initialAngle - (initialAngle / Double(shakes)) * Double(i)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.easeInOut(duration: total / Double(shakes * 2))) { shakeDegrees = angle }
-                withAnimation(.easeInOut(duration: total / Double(shakes * 2)).delay(total / Double(shakes * 2))) {
-                    shakeDegrees = -angle
-                }
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
-            withAnimation { shakeDegrees = 0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { startShaking() }
-        }
     }
 }
 

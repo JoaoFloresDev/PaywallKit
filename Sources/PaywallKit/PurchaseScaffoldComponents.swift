@@ -202,6 +202,8 @@ struct PurchasePlan: Identifiable {
     let unitLabel: String
     let durationPlanName: String
     let hasTrial: Bool
+    /// Length of the free trial in calendar days (nil without a trial) — feeds `TrialTimelineView`.
+    let trialDays: Int?
 
     // MARK: - Init
     init(product: Product, names: PurchasePeriodNames) {
@@ -211,6 +213,7 @@ struct PurchasePlan: Identifiable {
         self.period = product.subscription.map { PurchasePeriod.of($0.subscriptionPeriod) }
         self.unitLabel = self.period.map(names.unitName) ?? ""
         self.hasTrial = product.subscription?.introductoryOffer?.paymentMode == .freeTrial
+        self.trialDays = TrialTimeline.days(of: product)
 
         if hasTrial, let offer = product.subscription?.introductoryOffer {
             // Count and unit are normalised together: a 7-day trial reported as
@@ -231,6 +234,7 @@ struct PurchasePlan: Identifiable {
         self.period = preview.period
         self.unitLabel = preview.period.map(names.unitName) ?? ""
         self.hasTrial = preview.trialCount > 0
+        self.trialDays = hasTrial ? TrialTimeline.days(count: preview.trialCount, period: preview.trialPeriod) : nil
 
         if hasTrial {
             self.durationPlanName = names.trialName(preview.trialCount, preview.trialPeriod)
@@ -383,5 +387,72 @@ struct PurchasePlanCard: View {
             }
         }
         .font(.title3.bold())
+    }
+}
+
+// MARK: - Hero
+
+/// The paywall hero (asset image or SF Symbol) with the periodic "shake" that draws the eye.
+struct PurchaseHeroView: View {
+    // MARK: - Properties
+    let heroSymbol: String
+    let heroImageName: String?
+    let accentColor: Color
+    let height: CGFloat
+
+    // MARK: - State
+    @State private var shakeDegrees: Double = 0
+    @State private var shakeZoom: CGFloat = 0.9
+
+    // MARK: - View Body
+    var body: some View {
+        Group {
+            if let heroImageName {
+                Image(heroImageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: heroSymbol)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .foregroundStyle(accentColor)
+            }
+        }
+        .frame(height: height)
+        .scaleEffect(shakeZoom)
+        .rotationEffect(.degrees(shakeDegrees))
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { startShaking() }
+        }
+    }
+
+    // MARK: - Shake
+    private func startShaking() {
+        let total = 0.7
+        let shakes = 3
+        let initialAngle = 10.0
+
+        withAnimation(.easeInOut(duration: total / 2)) {
+            shakeZoom = 0.95
+            DispatchQueue.main.asyncAfter(deadline: .now() + total / 2) {
+                withAnimation(.easeInOut(duration: total / 2)) { shakeZoom = 0.9 }
+            }
+        }
+
+        for i in 0..<shakes {
+            let delay = (total / Double(shakes)) * Double(i)
+            let angle = initialAngle - (initialAngle / Double(shakes)) * Double(i)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.easeInOut(duration: total / Double(shakes * 2))) { shakeDegrees = angle }
+                withAnimation(.easeInOut(duration: total / Double(shakes * 2)).delay(total / Double(shakes * 2))) {
+                    shakeDegrees = -angle
+                }
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+            withAnimation { shakeDegrees = 0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { startShaking() }
+        }
     }
 }
