@@ -240,7 +240,6 @@ public struct ExitOfferSheet: View {
             .padding(.top, 28)
             .padding(.bottom, 16)
         }
-        .accessibilityIdentifier("paywall.exitOffer")
         .task { await load() }
         .onAppear(perform: handleAppear)
         .onChange(of: store.isPremium) { _, isPremium in
@@ -256,6 +255,8 @@ public struct ExitOfferSheet: View {
                 .font(.system(size: 32, weight: .semibold))
                 .foregroundStyle(accentColor)
         }
+        // Sheet id on the hero leaf, never on the root container (it would hide the CTA from XCTest/Maestro).
+        .accessibilityIdentifier("paywall.exitOffer")
     }
 
     private var titleBlock: some View {
