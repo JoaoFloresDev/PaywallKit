@@ -329,10 +329,12 @@ struct PurchasePlanCard: View {
                 Text(plan.durationPlanName)
                     .font(.headline.bold())
                     .foregroundStyle(palette.text)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(plan.hasTrial ? "\(thenText) \(plan.price) \(perPhrase)" : "\(plan.price) \(perPhrase)")
                     .foregroundStyle(palette.supportingText)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
