@@ -117,19 +117,23 @@ public struct TrialTimelineView: View {
     private let accentColor: Color
     private let palette: PurchasePalette
     private let cornerRadius: CGFloat
+    private let compact: Bool
 
     // MARK: - Init
     /// - Parameters:
     ///   - trialDays: length of the trial (use `TrialTimeline.days(of:)` on the product).
     ///   - price: the post-trial price as the app wants it read ("R$ 99,90 / ano").
     ///   - palette: same `PurchasePalette` the paywall uses, so the card matches its plan cards.
+    ///   - compact: tighter card without the cancel note (the charge line carries it) — the
+    ///     densest paywall layout.
     public init(
         trialDays: Int,
         price: String,
         strings: TrialTimelineStrings,
         accentColor: Color,
         palette: PurchasePalette = PurchasePalette(),
-        cornerRadius: CGFloat = 6
+        cornerRadius: CGFloat = 6,
+        compact: Bool = false
     ) {
         self.timeline = TrialTimeline(trialDays: trialDays)
         self.price = price
@@ -137,13 +141,14 @@ public struct TrialTimelineView: View {
         self.accentColor = accentColor
         self.palette = palette
         self.cornerRadius = cornerRadius
+        self.compact = compact
     }
 
     // MARK: - View Body
     /// Three columns joined by a rail — compact enough to sit between the plan cards and the CTA
     /// without pushing the CTA below the fold on a 6.1" phone.
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 4 : 8) {
             HStack(alignment: .top, spacing: 6) {
                 milestone(symbol: "lock.open.fill", label: strings.todayLabel, title: strings.accessTitle, id: "today")
                 milestone(symbol: "bell.fill", label: strings.dayLabel(timeline.reminderDay), title: strings.reminderTitle, id: "reminder")
@@ -157,7 +162,7 @@ public struct TrialTimelineView: View {
                     .padding(.horizontal, 44)
                     .padding(.top, 13)
             }
-            if let note = strings.cancelNote {
+            if !compact, let note = strings.cancelNote {
                 Text(note)
                     .font(.caption)
                     .foregroundStyle(palette.supportingText)
@@ -167,7 +172,7 @@ public struct TrialTimelineView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.vertical, compact ? 8 : 10)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius).fill(palette.cardFill))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(palette.cardBorder, lineWidth: 1))

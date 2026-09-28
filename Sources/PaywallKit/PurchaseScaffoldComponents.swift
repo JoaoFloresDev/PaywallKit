@@ -326,6 +326,8 @@ struct PurchasePlanCard: View {
     let perText: String
     let saveText: String
     let percentageSaved: Int?
+    /// Dense paywall: smaller badge and padding so the CTA stays above the fold.
+    var compact = false
 
     // MARK: - View Body
     var body: some View {
@@ -338,6 +340,7 @@ struct PurchasePlanCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(plan.hasTrial ? "\(thenText) \(plan.price) \(perPhrase)" : "\(plan.price) \(perPhrase)")
+                    .font(compact ? .subheadline : .body)
                     .foregroundStyle(palette.supportingText)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -348,9 +351,9 @@ struct PurchasePlanCard: View {
             // Savings badge only on the yearly plan, and only when a weekly plan gives a real comparison.
             if plan.period == .year, let saved = percentageSaved {
                 Text("\(saveText) \(saved)%")
-                    .font(.caption.bold())
+                    .font(compact ? .caption2.bold() : .caption.bold())
                     .foregroundStyle(palette.onAccent)
-                    .padding(8)
+                    .padding(compact ? 6 : 8)
                     .background(palette.badgeFill)
                     .cornerRadius(min(6, cornerRadius))
             }
@@ -358,8 +361,8 @@ struct PurchasePlanCard: View {
             selectionIndicator
         }
         .padding(.horizontal)
-        .padding(.vertical, 10)
-        .frame(minHeight: 56)
+        .padding(.vertical, compact ? 8 : 10)
+        .frame(minHeight: compact ? 50 : 56)
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: cornerRadius)

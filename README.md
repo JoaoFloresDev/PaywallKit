@@ -284,8 +284,10 @@ PurchaseScaffold(
     )
 )
 ```
+Dentro do `PurchaseScaffold` a oferta aparece como **card inferior sobre o paywall escurecido, na mesma árvore de views** (`ExitOfferOverlay`), não como `.sheet`: a folha aninhada sobre a apresentação do paywall ficava invisível pro XCTest/Maestro e o detent fixo cortava o herói num 6,3" (kits r2, 28/09/2026). O card se ajusta ao conteúdo; tocar fora = recusar. Não use `.accessibilityAddTraits(.isModal)` no card — some tudo do snapshot do XCTest menos um elemento; o scaffold esconde o paywall do VoiceOver enquanto o card está aberto.
 Standalone: `ExitOfferSheet(productID:strings:accentColor:...:reason:onFinished:)` num `.sheet` do app. Estado: `ExitOffer.hasBeenShown` / `isActive()` / `markShown()`; `ExitOffer.reset()` só em DEBUG. Ids `paywall.exitOffer`, `.cta`, `.dismiss`, `.deadline`. O mensal da oferta fica FORA de `StoreKitManager.configure(weekly:yearly:)` — o paywall principal continua com 2 planos (achado 12).
 
 ### `socialProof:` no `PurchaseScaffold`
-`PurchaseSocialProof(rating:ratingCountText:quote:author:)` entre os benefícios e os cards. Passe a nota REAL da loja (o kit não valida) — "4,9 estrelas" inventado é anti-cue do visual review. Id `paywall.socialProof`.
+`PurchaseSocialProof(rating:ratingCountText:quote:author:)` entre os benefícios e os cards.
+**CTA acima da dobra, sempre**: com prova social e/ou timeline o scaffold oferece a coluna em densidades cada vez mais apertadas a um `ViewThatFits` (`PurchaseColumnMetrics`) e usa a primeira que cabe na tela — o herói encolhe, depois sai; os respiros apertam; a nota de cancelamento da timeline sai (a linha da cobrança já diz); por último a prova social fica só com estrelas + contagem. Nada trunca; só rola se nem a mais densa couber. Adapta ao aparelho E ao idioma. Passe a nota REAL da loja (o kit não valida) — "4,9 estrelas" inventado é anti-cue do visual review. Id `paywall.socialProof`.
 

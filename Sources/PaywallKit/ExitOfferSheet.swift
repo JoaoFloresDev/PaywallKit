@@ -14,7 +14,8 @@
 //  monthly with a discounted first month, for example) is loaded here by id and only sold here.
 //  A promotional offer (signed JWS) can be passed through `purchaseOptions`.
 //
-//  Usage — automatic, from PurchaseScaffold:
+//  Usage — automatic, from PurchaseScaffold (presented as `ExitOfferOverlay`, a bottom card in the
+//  paywall's own view tree — see the note on the overlay):
 //      PurchaseScaffold(..., exitOffer: ExitOfferConfiguration(productID: "app.pro.monthly", strings: ...))
 //
 //  Usage — standalone (the host decides when):
@@ -335,7 +336,8 @@ public struct ExitOfferSheet: View {
                 .contentShape(Rectangle())
             }
             .disabled(!hasOffer || isPurchasing || product == nil)
-            .opacity(hasOffer && product != nil ? 1 : 0.5)
+            // A display-only preview (screenshots/QA) renders the CTA as the store build shows it.
+            .opacity(hasOffer && (product != nil || preview != nil) ? 1 : 0.5)
             .accessibilityIdentifier("paywall.exitOffer.cta")
             .accessibilityLabel(strings.ctaText)
 
@@ -388,5 +390,49 @@ public struct ExitOfferSheet: View {
         let hours = seconds / 3_600
         let minutes = (seconds % 3_600) / 60
         return hours > 0 ? "\(hours) h \(minutes) min" : "\(minutes) min"
+    }
+}
+
+// MARK: - Overlay Presentation
+
+/// How `PurchaseScaffold` presents the offer: a bottom card over the dimmed paywall, in the SAME
+/// view tree. A `.sheet` on top of the paywall's own presentation was invisible to XCTest/Maestro
+/// (nothing inside it could be asserted or tapped), and its fixed detent clipped the hero on a
+/// 6.3" phone (kits r2 review, 28/09/2026). The card sizes to its content. Modality for VoiceOver
+/// comes from the scaffold hiding the paywall behind it — NOT `.accessibilityAddTraits(.isModal)`
+/// on the card, which dropped every element but one from the XCTest snapshot.
+struct ExitOfferOverlay: View {
+    // MARK: - Properties
+    let configuration: ExitOfferConfiguration
+    let accentColor: Color
+    let palette: PurchasePalette
+    let backgroundColor: Color?
+    let cornerRadius: CGFloat
+    let reason: ExitOfferReason
+    let onFinished: () -> Void
+
+    // MARK: - View Body
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onFinished)
+                .accessibilityHidden(true)
+            ExitOfferSheet(configuration: configuration, accentColor: accentColor, palette: palette,
+                           backgroundColor: nil, cornerRadius: cornerRadius, reason: reason, onFinished: onFinished)
+                .background(card.ignoresSafeArea(edges: .bottom))
+                .overlay(alignment: .top) {
+                    Capsule().fill(palette.cardBorder).frame(width: 36, height: 5).padding(.top, 8)
+                }
+        }
+    }
+
+    // MARK: - Subviews
+    private var card: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous)
+        return shape
+            .fill(backgroundColor ?? palette.cardFill)
+            .overlay(shape.stroke(palette.cardBorder, lineWidth: 1))
     }
 }

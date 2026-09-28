@@ -16,15 +16,12 @@
 //  trial lives in ONE plan (the intro offer configured in ASC) and the user only picks a card.
 //  Keep it that way: no switch that adds/removes the trial.
 //
-//  Layout: one column that fills the screen on 6.1"-6.9" phones — hero, title,
-//  benefits, optional social proof, then the plan cards (annual pre-selected, weekly as the
-//  price anchor), the trial timeline while the selected plan has a trial, the CTA and the
-//  legal footer. The slack is split between the bands (top / hero-title / title-benefits /
-//  benefits-plans) instead of piling into a single empty stripe, and the column
-//  scrolls on short canvases (iPhone SE, iPad compatibility mode) so nothing is
-//  squeezed into truncation. Colors come from `PurchasePalette` (theme-derived
-//  defaults) so the kit never relies on system greys; `backgroundColor:` paints the
-//  surface when the host wants the paywall on its own palette.
+//  Layout: one column — hero, title, benefits, optional social proof, the plan cards (annual
+//  pre-selected, weekly as the price anchor), the trial timeline while the selected plan has a
+//  trial, the CTA and the legal footer. Classic column: slack split between the bands, scrolls
+//  on short canvases. With social proof/timeline: the densest-that-fits of
+//  `PurchaseColumnMetrics`, so the CTA and footer stay above the fold. Colors come from
+//  `PurchasePalette`; `backgroundColor:` paints the surface edge to edge.
 //
 //  Usage in your app:
 //
@@ -213,8 +210,8 @@ public struct PurchaseScaffold: View {
         selectedPlan?.hasTrial ?? false
     }
 
-    /// Social proof and/or the trial timeline add ~200pt to the column: the top block tightens
-    /// (smaller hero, shorter bands, 17pt benefits) so the CTA stays above the fold on a 6.1" phone.
+    /// Social proof and/or the trial timeline add ~200pt to the column: it is laid out through
+    /// the density ladder of `PurchaseColumnMetrics` so the CTA stays above the fold.
     private var isDense: Bool {
         socialProof != nil || trialTimeline != nil
     }
@@ -239,35 +236,28 @@ public struct PurchaseScaffold: View {
                 backgroundColor.ignoresSafeArea()
             }
             GeometryReader { geo in
-                ScrollView(showsIndicators: false) {
-                    content(canvasHeight: geo.size.height)
-                        .frame(minHeight: geo.size.height)
-                }
-                .scrollBounceBehavior(.basedOnSize)
+                column(canvasHeight: geo.size.height)
             }
+            .padding(.horizontal)
+            .accessibilityHidden(showExitOffer)   // the offer card is modal for VoiceOver
             closeRow
+                .padding(.horizontal)
+                .accessibilityHidden(showExitOffer)
         }
-        .padding(.horizontal)
         .onAppear(perform: handleAppear)
         .onChange(of: store.products) { _, _ in selectDefaultPlanIfNeeded() }
         .onChange(of: store.isPremium) { _, isPremium in
             if isPremium { dismissSoon() }
         }
-        .sheet(isPresented: $showExitOffer, onDismiss: { if !store.isPremium { isPresented = false } }) {
-            if let exitOffer {
-                ExitOfferSheet(
-                    configuration: exitOffer,
-                    accentColor: accentColor,
-                    palette: palette,
-                    backgroundColor: backgroundColor,
-                    cornerRadius: cornerRadius,
-                    reason: exitOfferReason,
-                    onFinished: { showExitOffer = false }
-                )
-                .presentationDetents([.fraction(0.62), .large])
-                .presentationDragIndicator(.visible)
+        .overlay {
+            if showExitOffer, let exitOffer {
+                ExitOfferOverlay(configuration: exitOffer, accentColor: accentColor, palette: palette,
+                                 backgroundColor: backgroundColor, cornerRadius: cornerRadius,
+                                 reason: exitOfferReason, onFinished: finishExitOffer)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .animation(.easeOut(duration: 0.25), value: showExitOffer)
     }
 
     // MARK: - Subviews
@@ -312,61 +302,79 @@ public struct PurchaseScaffold: View {
         .padding(.top, 4)
     }
 
+    /// Classic layout: one density, scrolls on short canvases. Dense layout: the first density
+    /// of the ladder whose natural height fits the screen; scrolling only when none fits.
+    @ViewBuilder
+    private func column(canvasHeight: CGFloat) -> some View {
+        if isDense {
+            ViewThatFits(in: .vertical) {
+                ForEach(PurchaseColumnDensity.denseLadder, id: \.self) { density in
+                    content(canvasHeight: canvasHeight, metrics: PurchaseColumnMetrics(density: density))
+                }
+                scrollingColumn(canvasHeight: canvasHeight, density: .minimal)
+            }
+        } else {
+            scrollingColumn(canvasHeight: canvasHeight, density: .regular)
+        }
+    }
+
+    private func scrollingColumn(canvasHeight: CGFloat, density: PurchaseColumnDensity) -> some View {
+        ScrollView(showsIndicators: false) {
+            content(canvasHeight: canvasHeight, metrics: PurchaseColumnMetrics(density: density))
+                .frame(minHeight: canvasHeight)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
     /// The column. Unbounded spacers share the slack 1 (top) : 2 (benefits → plans); the two
     /// bounded ones between hero/title/benefits grow up to a cap so the top block breathes
     /// on tall phones without drifting apart. Everything else is intrinsic, so the plan
     /// cards always sit directly above the CTA.
-    private func content(canvasHeight: CGFloat) -> some View {
+    private func content(canvasHeight: CGFloat, metrics m: PurchaseColumnMetrics) -> some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 16)
+            Spacer(minLength: m.leadingGap)
 
-            PurchaseHeroView(heroSymbol: heroSymbol, heroImageName: heroImageName,
-                             accentColor: accentColor, height: heroHeight(for: canvasHeight))
-
-            Spacer(minLength: isDense ? 12 : 20).frame(maxHeight: isDense ? 20 : 40)
+            if let heroHeight = m.heroHeight(canvasHeight: canvasHeight) {
+                PurchaseHeroView(heroSymbol: heroSymbol, heroImageName: heroImageName,
+                                 accentColor: accentColor, height: heroHeight)
+                Spacer(minLength: m.bandMin).frame(maxHeight: m.heroTitleMax)
+            }
 
             Text(title)
-                .font(.system(size: isDense ? 26 : 30, weight: .semibold))
+                .font(.system(size: m.titleSize, weight: .semibold))
                 .foregroundStyle(palette.text)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: isDense ? 12 : 20).frame(maxHeight: isDense ? 20 : 48)
+            Spacer(minLength: m.bandMin).frame(maxHeight: m.titleBenefitsMax)
 
-            featureList
+            featureList(m)
 
             if let socialProof {
-                Spacer(minLength: 12).frame(maxHeight: 16)
-                PurchaseSocialProofView(proof: socialProof, accentColor: accentColor,
-                                        palette: palette, cornerRadius: cornerRadius)
+                Spacer(minLength: m.proofGap).frame(maxHeight: 16)
+                PurchaseSocialProofView(proof: socialProof, accentColor: accentColor, palette: palette,
+                                        cornerRadius: cornerRadius, showsQuote: m.showsQuote)
             }
 
-            Spacer(minLength: isDense ? 12 : 16)
-            Spacer(minLength: isDense ? 0 : 8)
+            Spacer(minLength: m.plansGap)
+            Spacer(minLength: m.plansExtraGap)
 
-            planList
-            trialTimelineBlock
-            purchaseButton
-            footer
+            planList(m)
+            trialTimelineBlock(m)
+            purchaseButton(m)
+            footer(m)
         }
-        .padding(.top, 44)
+        .padding(.top, m.topInset)
         .frame(maxWidth: .infinity)
     }
 
-    /// 16% of the canvas, clamped: ~120pt on a 6.1"-6.9" phone, 80pt on the smallest canvases.
-    /// Dense layout (social proof / timeline): 10%, 64-88pt.
-    private func heroHeight(for canvasHeight: CGFloat) -> CGFloat {
-        if isDense { return min(88, max(64, canvasHeight * 0.10)) }
-        return min(140, max(80, canvasHeight * 0.16))
-    }
-
-    private var featureList: some View {
-        VStack(alignment: .leading, spacing: isDense ? 8 : 14) {
+    private func featureList(_ m: PurchaseColumnMetrics) -> some View {
+        VStack(alignment: .leading, spacing: m.featureSpacing) {
             ForEach(features) { feature in
                 PurchaseFeatureRow(feature: feature, accentColor: accentColor, palette: palette)
             }
         }
-        .font(.system(size: isDense ? 17 : 19))
+        .font(.system(size: m.featureSize))
         .padding(.horizontal, 8)
     }
 
@@ -392,15 +400,15 @@ public struct PurchaseScaffold: View {
     }
 
     @ViewBuilder
-    private var planList: some View {
+    private func planList(_ m: PurchaseColumnMetrics) -> some View {
         if plans.isEmpty && !isLoadingPlans {
             plansUnavailable
         } else {
-            planCards
+            planCards(compact: m.compactCards)
         }
     }
 
-    private var planCards: some View {
+    private func planCards(compact: Bool) -> some View {
         VStack(spacing: 10) {
             ForEach(plans) { plan in
                 Button {
@@ -418,7 +426,8 @@ public struct PurchaseScaffold: View {
                         thenText: thenText,
                         perText: perText,
                         saveText: saveText,
-                        percentageSaved: percentageSaved
+                        percentageSaved: percentageSaved,
+                        compact: compact
                     )
                 }
                 .tint(palette.text)
@@ -431,7 +440,7 @@ public struct PurchaseScaffold: View {
 
     /// "How your trial works" — only while the selected plan has a trial (research 2026-09, finding 6).
     @ViewBuilder
-    private var trialTimelineBlock: some View {
+    private func trialTimelineBlock(_ m: PurchaseColumnMetrics) -> some View {
         if let trialTimeline, let plan = selectedPlan, plan.hasTrial, let days = plan.trialDays, !isLoadingPlans {
             TrialTimelineView(
                 trialDays: days,
@@ -439,14 +448,15 @@ public struct PurchaseScaffold: View {
                 strings: trialTimeline,
                 accentColor: accentColor,
                 palette: palette,
-                cornerRadius: cornerRadius
+                cornerRadius: cornerRadius,
+                compact: m.compactCards
             )
-            .padding(.top, 8)
+            .padding(.top, m.timelineTop)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
-    private var purchaseButton: some View {
+    private func purchaseButton(_ m: PurchaseColumnMetrics) -> some View {
         ZStack {
             ProgressView().tint(palette.text).opacity(isLoadingPlans ? 1 : 0)
 
@@ -474,11 +484,11 @@ public struct PurchaseScaffold: View {
             .opacity(isLoadingPlans ? 0 : (plans.isEmpty ? 0.4 : 1))
             .disabled(plans.isEmpty)
             .accessibilityIdentifier("paywall.purchase")
-            .padding(.top, isDense ? 10 : 16)
+            .padding(.top, m.ctaTop)
         }
     }
 
-    private var footer: some View {
+    private func footer(_ m: PurchaseColumnMetrics) -> some View {
         HStack(spacing: 10) {
             Button(restoreText) {
                 Task { await store.restorePurchases() }
@@ -511,8 +521,8 @@ public struct PurchaseScaffold: View {
         }
         .foregroundStyle(palette.footerText)
         .font(.system(size: 15))
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.top, m.footerTop)
+        .padding(.bottom, m.footerBottom)
     }
 
     // MARK: - Purchase
@@ -557,6 +567,12 @@ public struct PurchaseScaffold: View {
         let available = plans
         guard available.contains(where: { $0.id == selectedProductID }) == false else { return }
         selectedProductID = available.first?.id ?? ""
+    }
+
+    /// Declined or done: the paywall closes with the offer (purchase closes it via `isPremium`).
+    private func finishExitOffer() {
+        showExitOffer = false
+        if !store.isPremium { isPresented = false }
     }
 
     private func dismissSoon() {

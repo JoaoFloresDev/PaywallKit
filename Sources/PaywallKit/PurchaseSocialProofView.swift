@@ -49,6 +49,8 @@ struct PurchaseSocialProofView: View {
     let accentColor: Color
     var palette = PurchasePalette()
     var cornerRadius: CGFloat = 6
+    /// The densest paywall layout keeps the stars and the count and drops the quote.
+    var showsQuote = true
 
     // MARK: - View Body
     var body: some View {
@@ -56,7 +58,7 @@ struct PurchaseSocialProofView: View {
             if proof.rating != nil || proof.ratingCountText != nil {
                 ratingRow
             }
-            if let quote = proof.quote {
+            if showsQuote, let quote = proof.quote {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\u{201C}\(quote)\u{201D}")
                         .font(.footnote)
