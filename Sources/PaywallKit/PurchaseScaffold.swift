@@ -11,6 +11,15 @@
 //  The original stub PurchaseModel is replaced by StoreKitManager.shared and the
 //  hero image is an SF Symbol by default so the kit drops in with zero assets.
 //
+//  Layout: one column that fills the screen on 6.1"-6.9" phones — hero, title,
+//  benefits, then the plan cards sitting directly above the CTA and the legal
+//  footer. The slack is split between the bands (top / hero-title / title-benefits /
+//  benefits-plans) instead of piling into a single empty stripe, and the column
+//  scrolls on short canvases (iPhone SE, iPad compatibility mode) so nothing is
+//  squeezed into truncation. Colors come from `PurchasePalette` (theme-derived
+//  defaults) so the kit never relies on system greys; `backgroundColor:` paints the
+//  surface when the host wants the paywall on its own palette.
+//
 //  Usage in your app:
 //
 //      // configure once at launch:
@@ -32,7 +41,9 @@
 //                  .init(title: String(localized: "paywall.feature4"), icon: "lock.square.stack")
 //              ],
 //              termsURL: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"),
-//              privacyURL: URL(string: "https://gambitstudiotech.com/privacy")
+//              privacyURL: URL(string: "https://gambitstudiotech.com/privacy"),
+//              backgroundColor: AppColors.background,
+//              palette: PurchasePalette(text: AppColors.textPrimary, supportingText: AppColors.textSecondary)
 //          )
 //      }
 //
@@ -67,6 +78,9 @@ public struct PurchaseScaffold: View {
     private let privacyURL: URL?
     private let hasCooldown: Bool
     private let allowCloseAfter: CGFloat
+    private let backgroundColor: Color?
+    private let palette: PurchasePalette
+    private let previewPlans: [PurchasePlanPreview]
 
     // MARK: - Localized Copy
     private let startTrialText: String
@@ -95,6 +109,10 @@ public struct PurchaseScaffold: View {
     @State private var shownAt = Date()
 
     // MARK: - Init
+    /// `backgroundColor` (nil = transparent, the host paints behind) and `palette`
+    /// (theme-derived defaults) keep the historical look when omitted. `previewPlans`
+    /// renders display-only cards when StoreKit returns no products — for screenshots
+    /// and simulator QA where no `.storekit` configuration is applied; never for sale.
     public init(
         isPresented: Binding<Bool>,
         title: String,
@@ -116,7 +134,10 @@ public struct PurchaseScaffold: View {
         nothingRestoredText: String = "No purchases restored",
         plansUnavailableText: String = "Couldn't load the plans. Check your connection and try again.",
         retryText: String = "Try again",
-        periodNames: PurchasePeriodNames = .english
+        periodNames: PurchasePeriodNames = .english,
+        backgroundColor: Color? = nil,
+        palette: PurchasePalette = PurchasePalette(),
+        previewPlans: [PurchasePlanPreview] = []
     ) {
         self._isPresented = isPresented
         self.title = title
@@ -139,11 +160,26 @@ public struct PurchaseScaffold: View {
         self.plansUnavailableText = plansUnavailableText
         self.retryText = retryText
         self.periodNames = periodNames
+        self.backgroundColor = backgroundColor
+        self.palette = palette
+        self.previewPlans = previewPlans
     }
 
     // MARK: - Computed
+    /// Real StoreKit products first; the preview cards only stand in while the store has none.
+    private var usesPreviewPlans: Bool {
+        store.products.isEmpty && !previewPlans.isEmpty
+    }
+
     private var plans: [PurchasePlan] {
-        store.products.map { PurchasePlan(product: $0, names: periodNames) }
+        if usesPreviewPlans {
+            return previewPlans.map { PurchasePlan(preview: $0, names: periodNames) }
+        }
+        return store.products.map { PurchasePlan(product: $0, names: periodNames) }
+    }
+
+    private var isLoadingPlans: Bool {
+        store.isLoading && !usesPreviewPlans
     }
 
     private var selectedHasTrial: Bool {
@@ -161,8 +197,17 @@ public struct PurchaseScaffold: View {
     // MARK: - View Body
     public var body: some View {
         ZStack(alignment: .top) {
+            if let backgroundColor {
+                backgroundColor.ignoresSafeArea()
+            }
+            GeometryReader { geo in
+                ScrollView(showsIndicators: false) {
+                    content(canvasHeight: geo.size.height)
+                        .frame(minHeight: geo.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
             closeRow
-            content
         }
         .padding(.horizontal)
         .onAppear(perform: handleAppear)
@@ -180,9 +225,11 @@ public struct PurchaseScaffold: View {
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .foregroundStyle(palette.text)
                     .opacity(0.1 + 0.1 * progress)
                     .rotationEffect(.degrees(-90))
                     .frame(width: 20, height: 20)
+                    .frame(width: 44, height: 44)
             } else {
                 // Visually subtle on purpose, but the hit area is 44pt and VoiceOver/QA can reach it:
                 // "xmark" gets the system-localized "Close" label, and the id lets Maestro tap it.
@@ -195,6 +242,7 @@ public struct PurchaseScaffold: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 18)
+                        .foregroundStyle(palette.text)
                         .opacity(0.2)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -203,36 +251,48 @@ public struct PurchaseScaffold: View {
                 .accessibilityIdentifier("paywall.close")
             }
         }
-        .padding(.top)
+        .padding(.top, 4)
     }
 
-    private var content: some View {
-        VStack(spacing: 20) {
-            hero
+    /// The column. Unbounded spacers share the slack 1 (top) : 2 (benefits → plans); the two
+    /// bounded ones between hero/title/benefits grow up to a cap so the top block breathes
+    /// on tall phones without drifting apart. Everything else is intrinsic, so the plan
+    /// cards always sit directly above the CTA.
+    private func content(canvasHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 16)
 
-            VStack(spacing: 10) {
-                Text(title)
-                    .font(.system(size: 30, weight: .semibold))
-                    .multilineTextAlignment(.center)
+            hero(height: heroHeight(for: canvasHeight))
 
-                VStack(alignment: .leading) {
-                    ForEach(features) { feature in
-                        PurchaseFeatureRow(feature: feature, accentColor: accentColor)
-                    }
-                }
-                .font(.system(size: 19))
-                .padding(.top)
-            }
+            Spacer(minLength: 20).frame(maxHeight: 40)
 
-            Spacer()
+            Text(title)
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(palette.text)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 20).frame(maxHeight: 48)
+
+            featureList
+
+            Spacer(minLength: 16)
+            Spacer(minLength: 8)
 
             planList
             purchaseButton
             footer
         }
+        .padding(.top, 44)
+        .frame(maxWidth: .infinity)
     }
 
-    private var hero: some View {
+    /// 16% of the canvas, clamped: ~120pt on a 6.1"-6.9" phone, 80pt on the smallest canvases.
+    private func heroHeight(for canvasHeight: CGFloat) -> CGFloat {
+        min(140, max(80, canvasHeight * 0.16))
+    }
+
+    private func hero(height: CGFloat) -> some View {
         Group {
             if let heroImageName {
                 Image(heroImageName)
@@ -245,12 +305,22 @@ public struct PurchaseScaffold: View {
                     .foregroundStyle(accentColor)
             }
         }
-        .frame(height: 120)
+        .frame(height: height)
         .scaleEffect(shakeZoom)
         .rotationEffect(.degrees(shakeDegrees))
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { startShaking() }
         }
+    }
+
+    private var featureList: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(features) { feature in
+                PurchaseFeatureRow(feature: feature, accentColor: accentColor, palette: palette)
+            }
+        }
+        .font(.system(size: 19))
+        .padding(.horizontal, 8)
     }
 
     /// Shown when StoreKit returned no products (offline, or subscriptions not yet live):
@@ -259,13 +329,14 @@ public struct PurchaseScaffold: View {
         VStack(spacing: 12) {
             Text(plansUnavailableText)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.supportingText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             Button(retryText) {
                 Task { await store.loadProducts() }
             }
             .font(.headline)
+            .tint(accentColor)
             .frame(minHeight: 44)
             .accessibilityIdentifier("paywall.retry")
         }
@@ -275,7 +346,7 @@ public struct PurchaseScaffold: View {
 
     @ViewBuilder
     private var planList: some View {
-        if plans.isEmpty && !store.isLoading {
+        if plans.isEmpty && !isLoadingPlans {
             plansUnavailable
         } else {
             planCards
@@ -292,22 +363,24 @@ public struct PurchaseScaffold: View {
                         plan: plan,
                         isSelected: selectedProductID == plan.id,
                         accentColor: accentColor,
+                        palette: palette,
                         thenText: thenText,
                         perText: perText,
                         saveText: saveText,
                         percentageSaved: percentageSaved
                     )
                 }
-                .tint(.primary)
+                .tint(palette.text)
+                .accessibilityIdentifier("paywall.plan.\(plan.id)")
             }
         }
-        .opacity(store.isLoading ? 0 : 1)
-        .overlay { if store.isLoading { ProgressView() } }
+        .opacity(isLoadingPlans ? 0 : 1)
+        .overlay { if isLoadingPlans { ProgressView().tint(palette.text) } }
     }
 
     private var purchaseButton: some View {
         ZStack {
-            ProgressView().opacity(store.isLoading ? 1 : 0)
+            ProgressView().tint(palette.text).opacity(isLoadingPlans ? 1 : 0)
 
             Button {
                 guard !store.isLoading, let product = store.product(for: selectedProductID) else { return }
@@ -316,20 +389,24 @@ public struct PurchaseScaffold: View {
                 HStack {
                     Spacer()
                     Text(callToActionText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.right")
                     Spacer()
                 }
-                .padding()
-                .foregroundStyle(.white)
+                .frame(minHeight: 44)
+                .padding(.vertical, 6)
+                .padding(.horizontal)
+                .foregroundStyle(palette.onAccent)
                 .font(.title3.bold())
+                .contentShape(Rectangle())
             }
             .background(accentColor)
             .cornerRadius(6)
-            .opacity(store.isLoading ? 0 : (plans.isEmpty ? 0.4 : 1))
+            .opacity(isLoadingPlans ? 0 : (plans.isEmpty ? 0.4 : 1))
             .disabled(plans.isEmpty)
             .accessibilityIdentifier("paywall.purchase")
             .padding(.top)
-            .padding(.bottom, 4)
         }
     }
 
@@ -348,10 +425,12 @@ public struct PurchaseScaffold: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
-            .underlined()
+            .underlined(palette.footerText)
+            .accessibilityIdentifier("paywall.restore")
 
             Button(termsText) { showTermsSheet = true }
-                .underlined()
+                .underlined(palette.footerText)
+                .accessibilityIdentifier("paywall.terms")
                 .confirmationDialog(termsText, isPresented: $showTermsSheet, titleVisibility: .visible) {
                     if let termsURL {
                         Button("Terms of Use") { UIApplication.shared.open(termsURL) }
@@ -362,8 +441,10 @@ public struct PurchaseScaffold: View {
                     Button("Cancel", role: .cancel) {}
                 }
         }
-        .foregroundStyle(.gray)
+        .foregroundStyle(palette.footerText)
         .font(.system(size: 15))
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Lifecycle
@@ -387,8 +468,9 @@ public struct PurchaseScaffold: View {
     /// exists to select. Products are price-sorted, so the first one is the
     /// headline plan (the yearly, where the trial lives).
     private func selectDefaultPlanIfNeeded() {
-        guard store.products.contains(where: { $0.id == selectedProductID }) == false else { return }
-        selectedProductID = store.products.first?.id ?? ""
+        let available = plans
+        guard available.contains(where: { $0.id == selectedProductID }) == false else { return }
+        selectedProductID = available.first?.id ?? ""
     }
 
     private func dismissSoon() {
@@ -429,12 +511,15 @@ public struct PurchaseScaffold: View {
 // MARK: - Underline Modifier
 
 private extension View {
-    func underlined() -> some View {
+    /// Footnote link with a 1pt underline in the footer color; keeps the 44pt hit height.
+    func underlined(_ color: Color) -> some View {
         font(.footnote)
+            .frame(minHeight: 44)
             .overlay(
                 Rectangle()
                     .frame(height: 1)
-                    .foregroundStyle(.gray),
+                    .foregroundStyle(color)
+                    .padding(.bottom, 12),
                 alignment: .bottom
             )
     }

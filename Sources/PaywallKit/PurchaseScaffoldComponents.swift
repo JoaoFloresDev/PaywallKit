@@ -116,6 +116,80 @@ public struct PurchasePeriodNames: Sendable {
     )
 }
 
+// MARK: - Palette
+
+/// Colors of the purchase scaffold that are not the accent. Defaults derive from the
+/// current foreground (`Color.primary` at reduced opacity) so the kit follows the host's
+/// color scheme without touching system greys; apps pass their `AppColors` for an exact
+/// match with the rest of the UI.
+public struct PurchasePalette: Sendable {
+    /// Title, benefit copy, plan names, close button.
+    public var text: Color
+    /// Plan price line, "plans unavailable" message.
+    public var supportingText: Color
+    /// Restore / terms links and their underline.
+    public var footerText: Color
+    /// Plan card stroke when not selected.
+    public var cardBorder: Color
+    /// Plan card fill when not selected.
+    public var cardFill: Color
+    /// Text on top of the accent (CTA label, check mark, badge).
+    public var onAccent: Color
+    /// Fill of the "SAVE nn%" badge.
+    public var badgeFill: Color
+
+    public init(
+        text: Color = Color.primary,
+        supportingText: Color = Color.primary.opacity(0.65),
+        footerText: Color = Color.primary.opacity(0.55),
+        cardBorder: Color = Color.primary.opacity(0.15),
+        cardFill: Color = Color.primary.opacity(0.03),
+        onAccent: Color = .white,
+        badgeFill: Color = .red
+    ) {
+        self.text = text
+        self.supportingText = supportingText
+        self.footerText = footerText
+        self.cardBorder = cardBorder
+        self.cardFill = cardFill
+        self.onAccent = onAccent
+        self.badgeFill = badgeFill
+    }
+}
+
+// MARK: - Plan Preview
+
+/// Display-only plan for screenshots and simulator QA, used by `PurchaseScaffold`
+/// only while StoreKit has no products. It renders the same card as a real product;
+/// tapping the CTA does nothing because there is no `Product` to buy.
+public struct PurchasePlanPreview: Identifiable, Sendable {
+    public let id: String
+    /// Localised price as the store would display it ("R$ 29,90").
+    public let price: String
+    /// Numeric price, so the save-% badge can be computed against the weekly plan.
+    public let priceValue: Decimal
+    public let period: PurchasePeriod?
+    /// Free-trial length; 0 = no trial.
+    public let trialCount: Int
+    public let trialPeriod: PurchasePeriod
+
+    public init(
+        id: String,
+        price: String,
+        priceValue: Decimal,
+        period: PurchasePeriod?,
+        trialCount: Int = 0,
+        trialPeriod: PurchasePeriod = .week
+    ) {
+        self.id = id
+        self.price = price
+        self.priceValue = priceValue
+        self.period = period
+        self.trialCount = trialCount
+        self.trialPeriod = trialPeriod
+    }
+}
+
 // MARK: - Plan Display Model
 
 /// A presentation model derived from a StoreKit `Product`.
@@ -147,6 +221,23 @@ struct PurchasePlan: Identifiable {
             self.durationPlanName = names.planName(period)
         } else {
             self.durationPlanName = product.displayName
+        }
+    }
+
+    init(preview: PurchasePlanPreview, names: PurchasePeriodNames) {
+        self.id = preview.id
+        self.price = preview.price
+        self.priceValue = preview.priceValue
+        self.period = preview.period
+        self.unitLabel = preview.period.map(names.unitName) ?? ""
+        self.hasTrial = preview.trialCount > 0
+
+        if hasTrial {
+            self.durationPlanName = names.trialName(preview.trialCount, preview.trialPeriod)
+        } else if let period = preview.period {
+            self.durationPlanName = names.planName(period)
+        } else {
+            self.durationPlanName = preview.id
         }
     }
 }
@@ -200,17 +291,21 @@ struct PurchaseFeatureRow: View {
     // MARK: - Properties
     let feature: PurchaseFeature
     let accentColor: Color
+    var palette = PurchasePalette()
 
     // MARK: - View Body
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Image(systemName: feature.icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 27, height: 27)
                 .foregroundStyle(accentColor)
             Text(feature.title)
+                .foregroundStyle(palette.text)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(minHeight: 32)
     }
 }
 
@@ -221,6 +316,7 @@ struct PurchasePlanCard: View {
     let plan: PurchasePlan
     let isSelected: Bool
     let accentColor: Color
+    var palette = PurchasePalette()
     let thenText: String
     let perText: String
     let saveText: String
@@ -232,25 +328,23 @@ struct PurchasePlanCard: View {
             VStack(alignment: .leading) {
                 Text(plan.durationPlanName)
                     .font(.headline.bold())
+                    .foregroundStyle(palette.text)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                if plan.hasTrial {
-                    Text("\(thenText) \(plan.price) \(perPhrase)")
-                        .opacity(0.8)
-                } else {
-                    Text("\(plan.price) \(perPhrase)")
-                        .opacity(0.8)
-                }
+                Text(plan.hasTrial ? "\(thenText) \(plan.price) \(perPhrase)" : "\(plan.price) \(perPhrase)")
+                    .foregroundStyle(palette.supportingText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             // Savings badge only on the yearly plan, and only when a weekly plan gives a real comparison.
             if plan.period == .year, let saved = percentageSaved {
                 Text("\(saveText) \(saved)%")
                     .font(.caption.bold())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(palette.onAccent)
                     .padding(8)
-                    .background(Color.red)
+                    .background(palette.badgeFill)
                     .cornerRadius(6)
             }
 
@@ -258,15 +352,16 @@ struct PurchasePlanCard: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
-        .cornerRadius(6)
-        .overlay {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? accentColor : Color.primary.opacity(0.15), lineWidth: 1)
-                RoundedRectangle(cornerRadius: 6)
-                    .foregroundStyle(isSelected ? accentColor.opacity(0.05) : Color.primary.opacity(0.001))
-            }
-        }
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? accentColor.opacity(0.08) : palette.cardFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? accentColor : palette.cardBorder, lineWidth: isSelected ? 1.5 : 1)
+        )
     }
 
     // MARK: - Subviews
@@ -277,10 +372,10 @@ struct PurchasePlanCard: View {
     private var selectionIndicator: some View {
         ZStack {
             Image(systemName: isSelected ? "circle.fill" : "circle")
-                .foregroundStyle(isSelected ? accentColor : Color.primary.opacity(0.15))
+                .foregroundStyle(isSelected ? accentColor : palette.cardBorder)
             if isSelected {
                 Image(systemName: "checkmark")
-                    .foregroundStyle(.white)
+                    .foregroundStyle(palette.onAccent)
                     .scaleEffect(0.7)
             }
         }
