@@ -31,8 +31,10 @@ public struct PurchaseCTAContext: Sendable, Equatable {
     }
 
     /// "R$ 14,90/semana" — the price billed after the trial, as Apple asks the screen to show it.
+    /// Non-breaking spaces keep "R$" and the amount on the same line when the CTA wraps.
     public var pricePerUnit: String {
-        unitLabel.isEmpty ? price : "\(price)/\(unitLabel)"
+        let glued = price.replacingOccurrences(of: " ", with: "\u{00A0}")
+        return unitLabel.isEmpty ? glued : "\(glued)/\(unitLabel)"
     }
 }
 
