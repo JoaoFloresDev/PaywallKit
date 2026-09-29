@@ -204,6 +204,9 @@ struct PurchasePlan: Identifiable {
     let hasTrial: Bool
     /// Length of the free trial in calendar days (nil without a trial) — feeds `TrialTimelineView`.
     let trialDays: Int?
+    /// Yearly plan only: the price divided by 52 in the store's currency format ("R$ 1,92"). Shown
+    /// subordinate to the billed price (Apple: per-period equivalents in a smaller, lower position).
+    let perWeekPrice: String?
 
     // MARK: - Init
     init(product: Product, names: PurchasePeriodNames) {
@@ -214,6 +217,7 @@ struct PurchasePlan: Identifiable {
         self.unitLabel = self.period.map(names.unitName) ?? ""
         self.hasTrial = product.subscription?.introductoryOffer?.paymentMode == .freeTrial
         self.trialDays = TrialTimeline.days(of: product)
+        self.perWeekPrice = self.period == .year ? product.priceFormatStyle.format(product.price / 52) : nil
 
         if hasTrial, let offer = product.subscription?.introductoryOffer {
             // Count and unit are normalised together: a 7-day trial reported as
@@ -235,6 +239,8 @@ struct PurchasePlan: Identifiable {
         self.unitLabel = preview.period.map(names.unitName) ?? ""
         self.hasTrial = preview.trialCount > 0
         self.trialDays = hasTrial ? TrialTimeline.days(count: preview.trialCount, period: preview.trialPeriod) : nil
+        self.perWeekPrice = preview.period == .year
+            ? PurchasePricing.reformat(preview.price, value: preview.priceValue / 52) : nil
 
         if hasTrial {
             self.durationPlanName = names.trialName(preview.trialCount, preview.trialPeriod)
@@ -268,6 +274,18 @@ enum PurchasePricing {
         let ratio = (yearly.priceValue / fullPrice) as NSDecimalNumber
         let saved = 100 - Int(ratio.doubleValue * 100)
         return saved > 0 ? saved : nil
+    }
+
+    /// Rewrites the number inside a display price ("R$ 99,90") with another value, keeping the
+    /// currency symbol, spacing and decimal separator — preview plans have no `Product` to format with.
+    static func reformat(_ displayPrice: String, value: Decimal) -> String? {
+        guard let range = displayPrice.range(of: #"\d[\d.,\s]*\d|\d"#, options: .regularExpression) else { return nil }
+        let number = displayPrice[range]
+        let separator: Character = number.dropLast(2).last == "," ? "," : "."
+        let rounded = (value as NSDecimalNumber).doubleValue
+        var digits = String(format: "%.2f", rounded)
+        if separator == "," { digits = digits.replacingOccurrences(of: ".", with: ",") }
+        return displayPrice.replacingCharacters(in: range, with: digits)
     }
 
     /// Localised currency string for an annualised value, matched to a sample plan's locale.
@@ -328,6 +346,8 @@ struct PurchasePlanCard: View {
     let percentageSaved: Int?
     /// Dense paywall: smaller badge and padding so the CTA stays above the fold.
     var compact = false
+    /// Builds the subordinate per-week line of the yearly card from the per-week price; nil hides it.
+    var perWeekText: ((String) -> String)?
 
     // MARK: - View Body
     var body: some View {
@@ -344,6 +364,14 @@ struct PurchasePlanCard: View {
                     .foregroundStyle(palette.supportingText)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if plan.period == .year, let perWeekText, let perWeek = plan.perWeekPrice {
+                    Text(perWeekText(perWeek))
+                        .font(.caption)
+                        .foregroundStyle(palette.supportingText.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("paywall.plan.perWeek")
+                }
             }
 
             Spacer(minLength: 8)

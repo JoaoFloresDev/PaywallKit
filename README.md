@@ -15,13 +15,32 @@ Shared GambitStudio paywall + StoreKit 2 manager. Self-contained GambitStudio st
 - **`PaywallAnalytics`** — hook único de eventos (`PaywallAnalytics.Event.*` lista os nomes).
 - **`PaywallCTAFill`** — gradiente padrão do CTA primário (mesma receita do `OnboardingCTAFill`).
 
-## Trial e planos — recomendação (pesquisa 2026-09, achado 6)
+## Padrão do lab: `GambitPaywallPreset` (28/09/2026)
 
-**Anual com trial de 7 dias + semanal sem trial.** Dados RevenueCat (17k+ apps, ago/2025-jul/2026): trial de 5-9 dias converte 45,9% vs 39,6% em ≤4 dias; trial de 3 dias é cancelado no dia 0 em 55,4% dos casos (84% até o D1). Semanal+trial tem o maior LTV 12m na Adapty, mas retém 4x pior que anual — o anual (com trial) é o plano-âncora, o semanal é a porta de entrada barata.
+App novo usa o preset, não monta o `PurchaseScaffold` na mão. Ordem, decisões e evidência de cada uma: `_GambitStudio/spec/paywall-onboarding-template.md`; copy em `_GambitStudio/templates/copy/paywall.<locale>.json`.
 
-- O trial é configurado na ASC (intro offer `FREE_TRIAL`, duração `ONE_WEEK`, 1 POST por território — LEARNINGS #1/#48), não no código. O kit só DETECTA: `product.subscription.introductoryOffer.paymentMode == .freeTrial`.
-- `PurchaseScaffold` mostra o trial no card e troca o CTA pra `startTrialText`. A duração é normalizada junto com a unidade (`PurchasePeriod.normalisedCount`): um trial de 7 dias que o StoreKit reporte como `.day × 7` lê "1-Week Trial" (LEARNINGS #49 — o simulador entrega `P1W` como dia × 7).
-- Health/Fitness: anual como default; Productivity: mensal (achado 7). `StoreKitManager.configure(weekly:yearly:)` continua o modelo padrão.
+```swift
+GambitPaywallPreset(
+    isPresented: $showPaywall,
+    heroPlan: .annualHero(trialDays: 7),     // .weeklyHero(trialDays: 3) utilitário · .noTrial(preselect:) produtividade
+    strings: PaywallCopy.strings,            // GambitPaywallStrings (CTA com trial + preço pós-trial, nota legal, timeline)
+    benefits: PaywallCopy.benefits,          // 3 resultados
+    accentColor: AppColors.primary,
+    heroSymbol: "timer",
+    termsURL: AppConstants.termsURL,
+    privacyURL: AppConstants.privacyURL,
+    socialProof: nil,                        // só com nota/contagem REAIS da loja
+    exitOffer: PaywallCopy.exitOffer,        // mostrado só após compra abandonada (exitOfferOnDismiss: false)
+    source: "onboarding",
+    backgroundColor: AppColors.background,
+    palette: PaywallCopy.palette,
+    cornerRadius: AppSpacing.cornerRadius
+)
+```
+
+O plano-herói vai primeiro e pré-selecionado; o outro fica como âncora sem trial; o card anual ganha a linha "R$ X por semana" subordinada; o CTA diz a duração do trial e o preço depois dele; o rodapé leva a nota de renovação automática. O trial em si é o intro offer da ASC: em DEBUG o preset imprime `[GambitPaywallPreset] store config: ...` quando o `.storekit`/ASC contradiz o `heroPlan` (trial no plano âncora, trial ≤ 4 dias no anual). X com 5 s de cooldown (`closeDelay`): não há dado de conversão para nenhum valor.
+
+Por baixo: `PurchaseScaffold(..., options: PurchaseScaffoldOptions(heroPeriod:ctaText:perWeekText:legalNote:source:placement:))` e `ExitOfferConfiguration(..., triggers:)` — aditivos; sem eles o scaffold renderiza como antes.
 
 ## Install
 

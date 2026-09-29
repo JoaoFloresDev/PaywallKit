@@ -65,7 +65,7 @@ public struct ExitOfferStrings: Sendable {
 
 // MARK: - Reason
 
-public enum ExitOfferReason: String, Sendable {
+public enum ExitOfferReason: String, Sendable, Hashable {
     /// The user closed the paywall.
     case dismiss
     /// The user started a purchase and cancelled the system sheet.
@@ -93,17 +93,30 @@ public struct ExitOfferConfiguration {
     public let strings: ExitOfferStrings
     public let purchaseOptions: Set<Product.PurchaseOption>
     public let preview: ExitOfferPreview?
+    /// When the scaffold may auto-present the offer. Default keeps both moments; the lab preset
+    /// (`GambitPaywallPreset`) passes `[.abandon]` — the 17% revenue number is from transaction
+    /// abandon (finding 5), and a one-time offer on CLOSE of the onboarding paywall was rejected
+    /// under 5.6 (Apple Developer Forums thread 768912, Nov/2024).
+    public let triggers: Set<ExitOfferReason>
 
     public init(
         productID: String,
         strings: ExitOfferStrings,
         purchaseOptions: Set<Product.PurchaseOption> = [],
-        preview: ExitOfferPreview? = nil
+        preview: ExitOfferPreview? = nil,
+        triggers: Set<ExitOfferReason> = [.dismiss, .abandon]
     ) {
         self.productID = productID
         self.strings = strings
         self.purchaseOptions = purchaseOptions
         self.preview = preview
+        self.triggers = triggers
+    }
+
+    /// Same offer with other trigger moments.
+    public func triggered(by triggers: Set<ExitOfferReason>) -> ExitOfferConfiguration {
+        ExitOfferConfiguration(productID: productID, strings: strings, purchaseOptions: purchaseOptions,
+                               preview: preview, triggers: triggers)
     }
 }
 

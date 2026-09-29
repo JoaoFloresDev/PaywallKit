@@ -23,32 +23,8 @@
 //  `PurchaseColumnMetrics`, so the CTA and footer stay above the fold. Colors come from
 //  `PurchasePalette`; `backgroundColor:` paints the surface edge to edge.
 //
-//  Usage in your app:
-//
-//      // configure once at launch:
-//      StoreKitManager.shared.configure(
-//          weekly: "myapp.pro.weekly",
-//          yearly: "myapp.pro.yearly"
-//      )
-//
-//      .fullScreenCover(isPresented: $showPaywall) {
-//          PurchaseScaffold(
-//              isPresented: $showPaywall,
-//              title: String(localized: "paywall.title"),
-//              accentColor: AppColors.primary,
-//              heroSymbol: "crown.fill",
-//              features: [
-//                  .init(title: String(localized: "paywall.feature1"), icon: "infinity"),
-//                  .init(title: String(localized: "paywall.feature2"), icon: "sparkles"),
-//                  .init(title: String(localized: "paywall.feature3"), icon: "lock.open.fill"),
-//                  .init(title: String(localized: "paywall.feature4"), icon: "lock.square.stack")
-//              ],
-//              termsURL: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"),
-//              privacyURL: URL(string: "https://gambitstudiotech.com/privacy"),
-//              backgroundColor: AppColors.background,
-//              palette: PurchasePalette(text: AppColors.textPrimary, supportingText: AppColors.textSecondary)
-//          )
-//      }
+//  Usage: see README ("Alternativa high-converting"). The lab default wraps it in
+//  `GambitPaywallPreset` (hero plan, CTA with trial + price, legal note).
 //
 
 import SwiftUI
@@ -88,6 +64,7 @@ public struct PurchaseScaffold: View {
     private let socialProof: PurchaseSocialProof?
     private let trialTimeline: TrialTimelineStrings?
     private let exitOffer: ExitOfferConfiguration?
+    private let options: PurchaseScaffoldOptions
 
     // MARK: - Localized Copy
     private let startTrialText: String
@@ -153,7 +130,8 @@ public struct PurchaseScaffold: View {
         previewPlans: [PurchasePlanPreview] = [],
         socialProof: PurchaseSocialProof? = nil,
         trialTimeline: TrialTimelineStrings? = nil,
-        exitOffer: ExitOfferConfiguration? = nil
+        exitOffer: ExitOfferConfiguration? = nil,
+        options: PurchaseScaffoldOptions = PurchaseScaffoldOptions()
     ) {
         self._isPresented = isPresented
         self.title = title
@@ -183,6 +161,7 @@ public struct PurchaseScaffold: View {
         self.socialProof = socialProof
         self.trialTimeline = trialTimeline
         self.exitOffer = exitOffer
+        self.options = options
     }
 
     // MARK: - Computed
@@ -193,9 +172,9 @@ public struct PurchaseScaffold: View {
 
     private var plans: [PurchasePlan] {
         if usesPreviewPlans {
-            return previewPlans.map { PurchasePlan(preview: $0, names: periodNames) }
+            return previewPlans.map { PurchasePlan(preview: $0, names: periodNames) }.heroFirst(options.heroPeriod)
         }
-        return store.products.map { PurchasePlan(product: $0, names: periodNames) }
+        return store.products.map { PurchasePlan(product: $0, names: periodNames) }.heroFirst(options.heroPeriod)
     }
 
     private var isLoadingPlans: Bool {
@@ -216,13 +195,16 @@ public struct PurchaseScaffold: View {
         socialProof != nil || trialTimeline != nil
     }
 
-    /// The exit offer auto-presents once per install, only when the app configured a product.
-    private var canPresentExitOffer: Bool {
-        exitOffer != nil && ExitOffer.canPresent() && !store.isPremium
+    /// The exit offer auto-presents once per install, only when the app configured a product
+    /// and this moment is one of its triggers.
+    private func canPresentExitOffer(_ reason: ExitOfferReason) -> Bool {
+        guard let exitOffer, exitOffer.triggers.contains(reason) else { return false }
+        return ExitOffer.canPresent() && !store.isPremium
     }
 
     private var callToActionText: String {
-        selectedHasTrial ? startTrialText : unlockNowText
+        if let ctaText = options.ctaText, let plan = selectedPlan { return ctaText(plan.ctaContext) }
+        return selectedHasTrial ? startTrialText : unlockNowText
     }
 
     private var percentageSaved: Int? {
@@ -277,9 +259,9 @@ public struct PurchaseScaffold: View {
                 // Visually subtle on purpose, but the hit area is 44pt and VoiceOver/QA can reach it:
                 // "xmark" gets the system-localized "Close" label, and the id lets Maestro tap it.
                 Button {
-                    PaywallAnalytics.log("paywall_dismissed", ["placement": "purchase_scaffold",
+                    PaywallAnalytics.log("paywall_dismissed", ["placement": options.placement,
                                                                "seconds": Int(Date().timeIntervalSince(shownAt))])
-                    if canPresentExitOffer {
+                    if canPresentExitOffer(.dismiss) {
                         exitOfferReason = .dismiss
                         showExitOffer = true
                     } else {
@@ -427,7 +409,8 @@ public struct PurchaseScaffold: View {
                         perText: perText,
                         saveText: saveText,
                         percentageSaved: percentageSaved,
-                        compact: compact
+                        compact: compact,
+                        perWeekText: options.perWeekText
                     )
                 }
                 .tint(palette.text)
@@ -489,6 +472,17 @@ public struct PurchaseScaffold: View {
     }
 
     private func footer(_ m: PurchaseColumnMetrics) -> some View {
+        VStack(spacing: 2) {
+            footerLinks
+            if let legalNote = options.legalNote {
+                PurchaseLegalNote(text: legalNote, color: palette.footerText)
+            }
+        }
+        .padding(.top, m.footerTop)
+        .padding(.bottom, m.footerBottom)
+    }
+
+    private var footerLinks: some View {
         HStack(spacing: 10) {
             Button(restoreText) {
                 Task { await store.restorePurchases() }
@@ -521,15 +515,13 @@ public struct PurchaseScaffold: View {
         }
         .foregroundStyle(palette.footerText)
         .font(.system(size: 15))
-        .padding(.top, m.footerTop)
-        .padding(.bottom, m.footerBottom)
     }
 
     // MARK: - Purchase
     /// A cancelled system sheet is the moment the exit offer is for (finding 5: "abandon").
     private func purchase(_ product: Product) async {
         let transaction = try? await store.purchase(product)
-        guard transaction == nil, !store.isPremium, canPresentExitOffer else { return }
+        guard transaction == nil, !store.isPremium, canPresentExitOffer(.abandon) else { return }
         exitOfferReason = .abandon
         showExitOffer = true
     }
@@ -547,7 +539,8 @@ public struct PurchaseScaffold: View {
     private func handleAppear() {
         if store.isPremium { isPresented = false }
         shownAt = Date()
-        if !store.isPremium { PaywallAnalytics.log("paywall_shown", ["placement": "purchase_scaffold"]) }
+        if let source = options.source { PaywallAnalytics.source = source }
+        if !store.isPremium { PaywallAnalytics.log("paywall_shown", ["placement": options.placement]) }
         selectDefaultPlanIfNeeded()
         if store.products.isEmpty && !store.isLoading {
             Task { await store.loadProducts() }
