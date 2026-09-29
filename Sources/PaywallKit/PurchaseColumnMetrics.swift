@@ -8,9 +8,10 @@
 //  28/09/2026). `PurchaseScaffold` offers the densities to a `ViewThatFits` in order and
 //  renders the first one whose natural height fits the screen, so the choice adapts to the
 //  phone AND to the locale (a long pt-BR benefit wraps where the en-US one does not).
-//  What gives way, in order: the hero shrinks, then it goes; the gaps tighten; the cancel
-//  note of the timeline goes (the charge line already says it); last, the social proof keeps
-//  the stars and the count but drops the quote. Nothing is ever truncated — text wraps.
+//  What gives way, in order: the hero shrinks and the gaps tighten; cards and timeline go
+//  compact (the cancel note goes — the charge line already says it); the hero goes; last,
+//  the social proof keeps the stars and the count but drops the quote. Nothing is ever
+//  truncated — text wraps.
 //
 
 import SwiftUI
@@ -24,13 +25,15 @@ enum PurchaseColumnDensity: CaseIterable {
     case roomy
     /// Dense, small hero, tighter gaps.
     case compact
+    /// Dense, small hero, compact cards and timeline.
+    case snug
     /// Dense, no hero, compact timeline and cards.
     case tight
     /// `tight` + the social proof reduced to stars and count.
     case minimal
 
     /// Dense densities in the order the scaffold tries them.
-    static let denseLadder: [PurchaseColumnDensity] = [.roomy, .compact, .tight, .minimal]
+    static let denseLadder: [PurchaseColumnDensity] = [.roomy, .compact, .snug, .tight, .minimal]
 }
 
 // MARK: - Metrics
@@ -44,6 +47,7 @@ struct PurchaseColumnMetrics {
         case .regular: return min(140, max(80, canvasHeight * 0.16))
         case .roomy: return min(88, max(64, canvasHeight * 0.10))
         case .compact: return 48
+        case .snug: return 44
         case .tight, .minimal: return nil
         }
     }
@@ -65,7 +69,7 @@ struct PurchaseColumnMetrics {
     var footerTop: CGFloat { isDense ? 2 : 8 }
     var footerBottom: CGFloat { isDense ? 0 : 8 }
     /// Cards, badge and timeline in their compact variant.
-    var compactCards: Bool { density == .tight || density == .minimal }
+    var compactCards: Bool { density == .snug || density == .tight || density == .minimal }
     var showsQuote: Bool { density != .minimal }
 
     private var isDense: Bool { density != .regular }
