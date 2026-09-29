@@ -479,7 +479,7 @@ public struct PurchaseScaffold: View {
                 .font(.title3.bold())
                 .contentShape(Rectangle())
             }
-            .background(accentColor)
+            .background(PaywallCTAFill.gradient(accentColor))   // same fill as the exit-offer CTA
             .cornerRadius(cornerRadius)
             .opacity(isLoadingPlans ? 0 : (plans.isEmpty ? 0.4 : 1))
             .disabled(plans.isEmpty)
